@@ -8,8 +8,11 @@ cfg_file = sys.argv[1]
 bots = sys.argv[2:]
 DEBUG = False
 
+##se le pasa el mapa como fichero de configuración
 config = engine.GameConfig(cfg_file)
+##la configuración y la cantidad de jugadores
 game = engine.Game(config, len(bots))
+##Bots que ejecutan la IA del jugador y se comunican
 actors = [botplayer.BotPlayer(game, i, cmdline, debug=DEBUG) for i, cmdline in enumerate(bots)]
 
 for actor in actors:
