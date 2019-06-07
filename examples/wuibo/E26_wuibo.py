@@ -24,7 +24,7 @@ class Wuibo(interface.Bot):
     	self.maxdist = self.maxx * self.maxy*self.maxx*self.maxy
     	self.lighthouses = map(tuple, init_state["lighthouses"])
     	self.light_count = len(self.lighthouses)
-    	#self.idlight = dict()
+    	self.idlight = []
     	self.conect_o = []
     	self.f_mind = -1
 	self.t_turn = 0
@@ -33,37 +33,36 @@ class Wuibo(interface.Bot):
     	#identificador del faro y sus coordenadas (x,y)
     
     	#cargar array de movimiento
-    	self.mov = [[self.maxdist,0,0,(-1,-1)],[self.maxdist,0,0,(-1,0)],[self.maxdist,0,0,(-1,+1)],[self.maxdist,0,0,(0,+1)],[self.maxdist,0,0,(+1,+1)],[self.maxdist,0,0,(+1,0)],[self.maxdist,0,0,(+1,-1)],[self.maxdist,0,0,(0,-1)]]
     	self.movd = [[self.maxdist,(-1,-1)],[self.maxdist,(-1,0)],[self.maxdist,(-1,+1)],[self.maxdist,(0,+1)],[self.maxdist,(+1,+1)],[self.maxdist,(+1,0)],[self.maxdist,(+1,-1)],[self.maxdist,(0,-1)]]
     	self.ener = [[0,0,(-1,-1)],[0,0,(-1,0)],[0,0,(-1,+1)],[0,0,(0,+1)],[0,0,(+1,+1)],[0,0,(+1,0)],[0,0,(+1,-1)],[0,0,(0,-1)]]
     			
-        #si usamos dict con posicione idlight no es necesario
     	start_time = time.time()
-    	"""for x in self.lighthouses:
-    		new = [x,[]]
+    	for x in xrange(self.light_count):
+    		new = [self.lighthouses[x],[]]
     		self.idlight.append(new)
-    
-	self.log("---%s---seconds",str(time.time()-start_time))"""   
+    	"""for lh in range(self.light_count):
+    		self.idlight[lh] =self.lighthouses[lh]"""
+	self.log("---%s---seconds",str(time.time()-start_time))   
 
     	#cargar distancia a faros
-    	self.light_dist = dict()
-        a_y = []
-        for y in xrange(self.maxy):
-            a_x = []
-    	    for x in xrange(self.maxx):
-                a_x.append(self.maxdist)
-                a_y.append(a_x)
-          
-        for lh in self.lighthouses:
-    	    self.light_dist[lh] = self.flood_dist(lh,a_y)
-            """
-    	    self.log("id: %s cord: %s",i,self.get_cord(i))
-    	    for ty in reversed(range(self.maxy)):
-                array = []
-                for tx in range(self.maxx):
-                    array.append(self.light_dist[i][ty][tx])			
-            self.log("%s",' '.join(str(e).zfill(3) for e in array))
-    	    """
+    	self.light_dist = []
+    	for i in xrange(self.light_count):
+    		a_y = []
+    		for y in xrange(self.maxy):
+    			a_x = []
+    			for x in xrange(self.maxx):
+    				a_x.append(self.maxdist)
+    			a_y.append(a_x)
+    		self.light_dist.append(a_y)
+    		self.flood_dist(i)
+    		"""
+    		self.log("id: %s cord: %s",i,self.get_cord(i))
+    		for ty in reversed(range(self.maxy)):
+    			array = []
+    			for tx in range(self.maxx):
+    				array.append(self.light_dist[i][ty][tx])			
+    			self.log("%s",' '.join(str(e).zfill(3) for e in array))
+    		"""
     	self.log("---%s---seconds",str(time.time()-start_time))
     	"""
     	#Energia por turno
@@ -87,44 +86,44 @@ class Wuibo(interface.Bot):
     	"""
     	#carga de triangulos
     	self.tri_total = int(math.factorial(self.light_count)/(math.factorial(3)*math.factorial(self.light_count-3)))
-    	#self.tri_count = 0
+    	self.tri_count = 0
     	self.tri=[]
     	fst = 0
     	snd = 1
     	cnt = 2
     	for i in xrange(self.tri_total):
-            cord1 = self.lighthouses[fst]
-            cord2 = self.lighthouses[snd]
-            cord3 = self.lighthouses[cnt]
-            new = [[cord1,cord2,cord3],0,0,0,0]
+    		new = [[fst,snd,cnt],0,0,0,0]
     		
-            #puntos
-            new[2]=self.TrianglePoints(cord1,cord2,cord3)
-            if(new[2] > 0):
-                #perimetro
-                d12 = self.light_dist[cord1][cord2[1]][cord2[0]]
-                d23 = self.light_dist[cord2][cord3[1]][cord3[0]]
-                d31 = self.light_dist[cord3][cord1[1]][cord1[0]]
-                new[3] = d12 + d23 + d31
-                #energía
-                new[4] = (new[3] + 6+new[3]/3) * 10
-                #self.log("(%s): %s",str(new[0]),str(new[2]))
-                #solo tener en cuenta los triangulos con puntos
-                #self.log("tri(%s): points %s perimetro: %s triangulos: %s coordenadas: %s,%s,%s",str(self.tri_count),str(new[2]),str(new[3]),str(new[0]),str(cord1),str(cord2),str(cord3))
-                #self.log("%s",str(new))
-                self.tri.append(new)
-                #self.idlight[fst][1] = self.idlight[fst][1] + [self.tri_count]
-                #self.idlight[snd][1] = self.idlight[snd][1] + [self.tri_count]
-                #self.idlight[cnt][1] = self.idlight[cnt][1] + [self.tri_count]
-                #self.tri_count += 1
+    		#puntos
+    		new[2]=self.TrianglePoints(self.get_cord(fst),self.get_cord(snd),self.get_cord(cnt))
+		if(new[2] > 0):
+	    		#perimetro
+	    		cord1 = self.get_cord(new[0][0])
+	    		cord2 = self.get_cord(new[0][1])
+	    		cord3 = self.get_cord(new[0][2])
+	    		d12 = self.light_dist[new[0][0]][cord2[1]][cord2[0]]
+	    		d23 = self.light_dist[new[0][1]][cord3[1]][cord3[0]]
+	    		d31 = self.light_dist[new[0][2]][cord1[1]][cord1[0]]
+	    		new[3] = d12 + d23 + d31
+	    		#energía
+	    		new[4] = (new[3] + 6+new[3]/3) * 10
+	    		#self.log("(%s): %s",str(new[0]),str(new[2]))
+	    		#solo tener en cuenta los triangulos con puntos
+    			#self.log("tri(%s): points %s perimetro: %s triangulos: %s coordenadas: %s,%s,%s",str(self.tri_count),str(new[2]),str(new[3]),str(new[0]),str(cord1),str(cord2),str(cord3))
+    			#self.log("%s",str(new))
+    			self.tri.append(new)
+    			self.idlight[fst][1] = self.idlight[fst][1] + [self.tri_count]
+    			self.idlight[snd][1] = self.idlight[snd][1] + [self.tri_count]
+    			self.idlight[cnt][1] = self.idlight[cnt][1] + [self.tri_count]
+    			self.tri_count += 1
     		#avanzar en la cuenta
     		cnt += 1
     		if cnt >= self.light_count:
-                    snd +=1
-                    if snd >= self.light_count-1:
-                        fst +=1
-                        snd = fst +1
-    		    cnt = snd +1
+    			snd +=1
+    			if snd >= self.light_count-1:
+    				fst +=1
+    				snd = fst +1
+    			cnt = snd +1
     		
     	self.log("---%s---seconds",str(time.time()-start_time))
     	#inicializar parametros de control e cambios en trinagulo elegido
@@ -142,79 +141,78 @@ class Wuibo(interface.Bot):
     	"""Devuelve las coordenadas desde el id"""
     	return self.idlight[i][0]
 
-    def flood_dist(self,posi,arr_fin):
-        """Flood dist"""
-        (ix,iy) = posi
-    	arr_fin[iy][ix] = 0
+    def flood_dist(self,ilight):
+    	"""Flood dist"""
+    	(ix,iy) = self.get_cord(ilight)
+    	self.light_dist[ilight][iy][ix] = 0
     	loop = 1
     	arr_act = [[ix,iy]]
     	arr_nxt = [[-1,-1]]
     	checked = arr_act
     	while len(arr_nxt) != 0:
-            arr_nxt = []
-            for cell in arr_act:
-                """234"""
-                """1*5"""
-                """076"""
-                """dire 0"""
-                act = [cell[0]-1,cell[1]-1]
-                if cell[0]>0 and cell[1]>0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 1"""
-                act = [cell[0]-1,cell[1]]
-                if cell[0]>0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 2"""
-                act = [cell[0]-1,cell[1]+1]
-                if cell[0] > 0 and cell[1] < (self.maxy-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 3"""
-                act = [cell[0],cell[1]+1]
-                if cell[1] < (self.maxy-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 4"""
-                act = [cell[0]+1,cell[1]+1]
-                if cell[0] < (self.maxx-1) and cell[1] < (self.maxy-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 5"""
-                act = [cell[0]+1,cell[1]]
-                if cell[0] < (self.maxx-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 6"""
-                act = [cell[0]+1,cell[1]-1]
-                if cell[0] < (self.maxx-1) and cell[1] > 0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 7"""
-                act = [cell[0],cell[1]-1]
-                if cell[1] > 0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-            arr_act = arr_nxt
-            loop += 1
-        return arr_fin
+    		arr_nxt = []
+    		for cell in arr_act:
+    			"""234"""
+    			"""1*5"""
+    			"""076"""
+    			"""dire 0"""
+    			act = [cell[0]-1,cell[1]-1]
+    			if cell[0]>0 and cell[1]>0:
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 1"""
+    			act = [cell[0]-1,cell[1]]
+    			if cell[0]>0:
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 2"""
+    			act = [cell[0]-1,cell[1]+1]
+    			if cell[0] > 0 and cell[1] < (self.maxy-1):
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 3"""
+    			act = [cell[0],cell[1]+1]
+    			if cell[1] < (self.maxy-1):
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 4"""
+    			act = [cell[0]+1,cell[1]+1]
+    			if cell[0] < (self.maxx-1) and cell[1] < (self.maxy-1):
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 5"""
+    			act = [cell[0]+1,cell[1]]
+    			if cell[0] < (self.maxx-1):
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 6"""
+    			act = [cell[0]+1,cell[1]-1]
+    			if cell[0] < (self.maxx-1) and cell[1] > 0:
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    			"""dire 7"""
+    			act = [cell[0],cell[1]-1]
+    			if cell[1] > 0:
+    				if self.map[act[1]][act[0]] == 1 and act not in checked:
+    					arr_nxt = arr_nxt + [act]
+    					self.light_dist[ilight][act[1]][act[0]] = loop
+    					checked = checked + [act]
+    		arr_act = arr_nxt
+    		loop += 1
 	
     def sign(self,p1,p2,p3):
 	    return (p1[0] - p3[0]) * (p2[1]-p3[1]) - (p2[0]-p3[0]) * (p1[1] - p3[1])
@@ -299,14 +297,28 @@ class Wuibo(interface.Bot):
         cx, cy = state["position"]
     	#cargar la situación de los faros
         lighthouses = dict((tuple(lh["position"]), lh)
-                                for lh in state["lighthouses"]) 
+                                for lh in state["lighthouses"])
+    
+    	#Identificar los faros de los que tenemos la clave y somos dueños (sino no se peude unir)
 	#incluir gestión de prob
+	done_tri = []
+    	key_id = []
 	self.t_turn += 1
-        for tr in self.tri:
-            for ti in tr[0]:
-                if lighthouses[ti[0]]["owner"] >= 0 and lighthouses[ti[0]]["owner"] != self.player_num:
-                    self.tri[lt][1] += 1
-                    break
+    	for i in xrange(self.light_count):
+    		(lx,ly) = self.get_cord(i)
+    		if(lighthouses[(lx,ly)]["have_key"] and lighthouses[(lx,ly)]["owner"] == self.player_num):
+    			key_id = key_id + [i]
+    			self.log("option key: = %s (%s,%s)",str(i),str(lx),str(ly))
+		for lt in self.idlight[i][1]:
+			#no tratado
+			if lt not in done_tri:
+				done_tri = done_tri + [lt]
+				for ti in self.tri[lt][0]:
+					t_cord = self.get_cord(ti)
+					if lighthouses[(t_cord[0],t_cord[1])]["owner"] >= 0 and lighthouses[(t_cord[0],t_cord[1])]["owner"] != self.player_num:
+						self.tri[lt][1] += 1
+						break
+    	self.log("key_id: %s",str(key_id))
     	self.log("energi: %s position: %s t_faro: %s",state["energy"],state["position"],self.t_faro)
     	
     	#Gestión de vista
@@ -319,7 +331,7 @@ class Wuibo(interface.Bot):
     	start_time = time.time()
     	self.log("PreObjetive: %s, %s",str(self.o1[4]),str(self.o1[5]))
     	#nuevo objetivo
-    	self.get_objetive(lighthouses,cx,cy)
+    	self.get_objetive(lighthouses,key_id,cx,cy)
 	self.log("PostObjetive: %s, %s",str(self.o1[4]),str(self.o1[5]))
 	self.log("---%s---seconds",str(time.time()-start_time))
     	"""
@@ -760,110 +772,113 @@ class Wuibo(interface.Bot):
 		
 		
 
-    def get_objetive(self,lhs,cx,cy):
-        self.log("CAMBIO OBJETIVO (%s)",str(self.o1[0]))
+    def get_objetive(self,lhs,key_id,cx,cy):
+    	self.log("CAMBIO OBJETIVO (%s)",str(self.o1[0]))
     	self.o2 = [-1,-1,(self.maxdist * 4),-1,-1,-1]
     	to = -1 #temporal objetive
     	f_min = self.maxdist
     	f_d = -1
-        #distancía al faro más cercano sin llave
-    	for il in lhs:
-            td = self.light_dist[il["position"]][cy][cx]
-            #del que no tengamos llave
-            if td < f_min and il not il["have_key"]:
-                f_min = td
-                f_d = il["position"]
-    	for tr in self.tri:
-            cnd = [] #los que tenemos - con llave o sin llave
-            otros = [] #el resto
-            #el primer faro
-            if lhs[tr[0][0]]["owner"] == self.player_num:
-                if lhs[tr[0][0]]["have_key"]:
-                    cnd = cnd + [tr[0][0],1]]
-                else:
-                    cnd = cnd + [tr[0][0],0]]
-            else:
-                otros = otros + [tr[0][0]]
+    	for il in xrange(self.light_count):
+    		td = self.light_dist[il][cy][cx]
+    		#del que no tengamos llave
+    		if td < f_min and il not in key_id:
+    			f_min = td
+    			f_d = il
+    	for tr in xrange(self.tri_count):
+		cnd = []
+		otros = []
+		cord = self.get_cord(self.tri[tr][0][0])
+		if lhs[(cord[0],cord[1])]["owner"] == self.player_num:
+			if self.tri[tr][0][0] in key_id:
+				cnd = cnd + [[self.tri[tr][0][0],1]]
+			else:
+				cnd = cnd + [[self.tri[tr][0][0],0]]
+		else:
+			otros = otros + [self.tri[tr][0][0]]
 
-            if lhs[tr[0][1]]["owner"] == self.player_num:
-                if lhs[tr[0][1]]["have_key"]:
-                    cnd = cnd + [tr[0][1],1]
-                else:
-                    cnd = cnd + [tr[0][1],0]]
-            else:
-                otros = otros + [tr[0][1]]
+		cord = self.get_cord(self.tri[tr][0][1])
+		if lhs[(cord[0],cord[1])]["owner"] == self.player_num:
+			if self.tri[tr][0][1] in key_id:
+				cnd = cnd + [[self.tri[tr][0][1],1]]
+			else:
+				cnd = cnd + [[self.tri[tr][0][1],0]]
+		else:
+			otros = otros + [self.tri[tr][0][1]]
 
-            if lhs[tr[0][2]]["owner"] == self.player_num:
-                if lsh[tr[0][2]]["have_key"]:
-                    cnd = cnd + [tr[0][2],1]]
-                else:
-                    cnd = cnd + [tr[0][2],0]]
-            else:
-                otros = otros + [tr[0][2]]
-            #mirar cuantos
-            if len(cnd) == 0:
-                #controlo 0
-                td1 = self.light_dist[tr[0][0]][cy][cx]
-                td2 = self.light_dist[tr[0][1]][cy][cx]
-                td3 = self.light_dist[tr[0][2]][cy][cx]
-                if td1 < td2 and td1 < td3:
-                    t1 = td1 + tr[3]
-                    nxt = tr[0][0]
-                elif td2 < td3:
-                    t1 = td2 + tr[3]
-                    nxt = tr[0][1]
-                else:
-                    t1 = td3 + tr[3]
-                    nxt = tr[0][2]
-                #check
-                if to == -1:
-                    #comprobar si hay cruces
-                    if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                        continue
-                    self.o2 = [tr,t1,0,nxt,-1]
-                    to = 0
-                else:
-                    if self.check_tri(t1,tr):
-                        #comprobar si hay cruces
-                        if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                            continue
-                        self.o2 = [tr,t1,0,nxt,-1]
-            elif len(cnd) == 1:
-                #controlo 1
-                if cnd[0][1] == 1:
-                    #tengo llave
-                    n_cnd = cnd[0][0]
-                    tdo1 = self.light_dist[otros[0]][cy][cx]
-                    tdo2 = self.light_dist[otros[1]][cy][cx]
-                    dotros = self.light_dist[otros[1]][otros[0][1]][otros[0][0]]
-                    dc1 = self.light_dist[cnd[0][0]][otros[0][1]][otros[0][0]]
-                    dc2 = self.light_dist[cnd[0][0]][otros[1][1]][otros[1][1]]
+		cord = self.get_cord(self.tri[tr][0][2])
+		if lhs[(cord[0],cord[1])]["owner"] == self.player_num:
+			if self.tri[tr][0][2] in key_id:
+				cnd = cnd + [[self.tri[tr][0][2],1]]
+			else:
+				cnd = cnd + [[self.tri[tr][0][2],0]]
+		else:
+			otros = otros + [self.tri[tr][0][2]]
+		#mirar cuantos
+		if len(cnd) == 0:
+			#controlo 0
+			td1 = self.light_dist[self.tri[tr][0][0]][cy][cx]
+			td2 = self.light_dist[self.tri[tr][0][1]][cy][cx]
+			td3 = self.light_dist[self.tri[tr][0][2]][cy][cx]
+			if td1 < td2 and td1 < td3:
+				t1 = td1 + self.tri[tr][3]
+				nxt = self.tri[tr][0][0]
+			elif td2 < td3:
+				t1 = td2 + self.tri[tr][3]
+				nxt = self.tri[tr][0][1]
+			else:
+				t1 = td3 + self.tri[tr][3]
+				nxt = self.tri[tr][0][2]
+			#check
+			if to == -1:
+				#comprobar si hay cruces
+				if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
+					continue
+				self.o2 = [tr,self.tri[tr][2],t1,0,nxt,-1]
+				to = 0
+			else:
+				if self.check_tri(t1,self.tri[tr][2],tr):
+					#comprobar si hay cruces
+					if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
+						continue
+					self.o2 = [tr,self.tri[tr][2],t1,0,nxt,-1]
+		elif len(cnd) == 1:
+			#controlo 1
+			if cnd[0][1] == 1:
+				#tengo llave
+				n_cnd = cnd[0][0]
+				tdo1 = self.light_dist[otros[0]][cy][cx]
+				tdo2 = self.light_dist[otros[1]][cy][cx]
+				cord1 = self.get_cord(otros[0])
+				cord2 = self.get_cord(otros[1])
+				dotros = self.light_dist[otros[1]][cord1[1]][cord1[0]]
+				dc1 = self.light_dist[cnd[0][0]][cord1[1]][cord1[0]]
+				dc2 = self.light_dist[cnd[0][0]][cord2[1]][cord2[0]]
 	
-                    dt1 = tdo1 + dotros + dc1
-                    dt2 = tdo2 + dotros + dc2
-                    if dt1 < dt2:
-                        nxt = otros[0]
-                        t1 = dt1
-                    else:		
-                        nxt = otros[1]
-                        t1 = dt2
-                    #check
-                    if to == -1:
-                        #comprobar si hay cruces
-                        if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                            continue
-                        self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-                        to = 0
-                    else:
-                        if self.check_tri(t1,self.tri[tr][2],tr):
-                            #comprobar si hay cruces
-                            if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                                continue
-                            self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-    
-                else:
-                    #no tengo llave, como sin controlar
-                    td1 = self.light_dist[self.tri[tr][0][0]][cy][cx]
+				dt1 = tdo1 + dotros + dc1
+				dt2 = tdo2 + dotros + dc2
+				if dt1 < dt2:
+					nxt = otros[0]
+					t1 = dt1
+				else:		
+					nxt = otros[1]
+					t1 = dt2
+				#check
+				if to == -1:
+					#comprobar si hay cruces
+					if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
+						continue
+					self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
+					to = 0
+				else:
+					if self.check_tri(t1,self.tri[tr][2],tr):
+						#comprobar si hay cruces
+						if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
+							continue
+						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
+			
+			else:
+				#no tengo llave, como sin controlar
+				td1 = self.light_dist[self.tri[tr][0][0]][cy][cx]
 				td2 = self.light_dist[self.tri[tr][0][1]][cy][cx]
 				td3 = self.light_dist[self.tri[tr][0][2]][cy][cx]
 				if td1 < td2 and td1 < td3:
@@ -1494,53 +1509,53 @@ class Wuibo(interface.Bot):
 
    
 
-    def check_tri(self,t1,nt):
-        if self.o2[0][2] < nt[2]:
-            #el nuevo más puntos
-            if self.o2[1] > t1:
-                #el nevo menos turnos
-                return True
-            else:
-                #el nuevo más turnos
-                dt = t1-self.o2[1]
-                dp = dt*self.o2[0][2]
-                if dp > nt[2]:
-                    return False
-                elif dp == p1:
-                    #por probabilidad
-                    pa = (self.o2[0][1]*1.0)/(self.t_turn*1.0)
-                    pn = (nt[1]*1.0)/(self.t_turn*1.0)
-                    ant = pow((1-pa),self.o2[2])
-                    new = pow((1-pn),t1)
-                    if ant < new:
-                        return True
-                    else:
-                        return False
-                else:
-                    return True
-        else:
-            #el nuevo menos puntos
-            if self.o2[1] > t1:
-                #el nuevo menos turnos
-                dt = self.o2[1]-t1
-                dp = dt*nt[2]
-                if dp > self.o2[0][2]:
-                    return True
-                elif dp == self.o2[0][2]:
-                    #por probabilidad
-                    pa = (self.o2[0][1]*1.0)/(self.t_turn*1.0)
-                    pn = (nt[1]*1.0)/(self.t_turn*1.0)
-                    ant = pow((1-pa),self.o2[2])
-                    new = pow((1-pn),t1)
-                    if ant <= new:
-                        return True
-                    else:
-                        return False			
-                else:
-                    return False
-            else:
-                #el nuevo mas turnos
-                return False
+    def check_tri(self,t1,p1,nt):
+    	if self.o2[1] < p1:
+		#el nuevo más puntos
+		if self.o2[2] > t1:
+			#el nevo menos turnos
+			return True
+		else:
+			#el nuevo más turnos
+			dt = t1-self.o2[2]
+			dp = dt*self.o2[1]
+			if dp > p1:
+				return False
+			elif dp == p1:
+				#por probabilidad
+				pa = (self.tri[self.o2[0]][1]*1.0)/(self.t_turn*1.0)
+				pn = (self.tri[nt][1]*1.0)/(self.t_turn*1.0)
+				ant = pow((1-pa),self.o2[2])
+				new = pow((1-pn),t1)
+		    		if ant < new:
+					return True
+				else:
+					return False
+			else:
+				return True
+	else:
+		#el nuevo menos puntos
+		if self.o2[2] > t1:
+			#el nuevo menos turnos
+			dt = self.o2[2]-t1
+			dp = dt*p1
+			if dp > self.o2[1]:
+				return True
+			elif dp == self.o2[1]:
+				#por probabilidad
+				pa = (self.tri[self.o2[0]][1]*1.0)/(self.t_turn*1.0)
+				pn = (self.tri[nt][1]*1.0)/(self.t_turn*1.0)
+				ant = pow((1-pa),self.o2[2])
+				new = pow((1-pn),t1)
+		    		if ant <= new:
+					return True
+				else:
+					return False			
+			else:
+				return False
+		else:
+			#el neuvo mas turnos
+			return False
 
 if __name__ == "__main__":
     iface = interface.Interface(Wuibo)

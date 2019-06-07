@@ -128,7 +128,7 @@ class GameConfig(object):
         self.lighthouses = []
         players = []
         self.island = []
-		##recorrer el fichero y cargar posición de faros y la isla (0 o 1 si es viable)
+		##recorrer el fichero y cargar posicion de faros y la isla (0 o 1 si es viable)
         for y, line in enumerate(lines[::-1]):
             row = []
             for x, c in enumerate(line):
@@ -143,7 +143,7 @@ class GameConfig(object):
                     row.append(1)
                     players.append((c, (x,y)))
             self.island.append(row)
-		##el players público es el que solo guarda las posiciones
+		##el players publico es el que solo guarda las posiciones
         self.players = [pos for c, pos in sorted(players)]
         w = len(self.island[0])
         h = len(self.island)
@@ -164,7 +164,7 @@ class Game(object):
         assert numplayers <= len(cfg.players)
 		##Cargar la clase isla
         self.island = Island(cfg.island)
-		##cargar los faros. Posición y faros(clase)
+		##cargar los faros. Posicion y faros(clase)
         self.lighthouses = dict((x, Lighthouse(self, x)) for x in cfg.lighthouses)
         self.conns = set()
         self.tris = dict()
@@ -211,10 +211,10 @@ class Game(object):
 
     def pre_round(self):
         for pos in self.lighthouses:
-			##distribución de la energía en puesto por cada faro
+	    ##distribucion de la energia en puesto por cada faro
             for y in xrange(pos[1]-self.RDIST+1, pos[1]+self.RDIST):
                 for x in xrange(pos[0]-self.RDIST+1, pos[0]+self.RDIST):
-					##USA ESTA FORMULA!!!
+		    ##USA ESTA FORMULA!!!
                     dist = geom.dist(pos, (x,y))
                     delta = int(math.floor(self.RDIST - dist))
                     if delta > 0:
