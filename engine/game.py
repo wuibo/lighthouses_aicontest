@@ -32,6 +32,7 @@ while True:
     for i in range(len(bots)):
         print "P%d: %d" % (i, game.players[i].score),
     print
+    time.sleep(1)
     round += 1
 
 view.update()

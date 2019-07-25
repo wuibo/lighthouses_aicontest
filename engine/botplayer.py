@@ -8,8 +8,8 @@ class CommError(Exception):
 
 class BotPlayer(object):
     INIT_TIMEOUT = 2.0
-    MOVE_TIMEOUT = 0.1
-    MOVE_HARDTIMEOUT = 0.5
+    MOVE_TIMEOUT = 0.2
+    MOVE_HARDTIMEOUT = 0.8
     def __init__(self, game, playernum, cmdline, debug=False):
         self.alive = True
         self.p = subprocess.Popen(cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)

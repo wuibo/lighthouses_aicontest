@@ -7,6 +7,7 @@ Licencia: Dominio Público
 Requisitos:
 	Python v2.6.x o v2.7.x
 		# apt-get install python2.7
+		# apt-get install python-numpy
 
 Uso:
 $ python wuibo/wuibo.py
