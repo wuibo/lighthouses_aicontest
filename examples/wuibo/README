@@ -10,4 +10,4 @@ Requisitos:
 		# apt-get install python-numpy
 
 Uso:
-$ python wuibo/wuibo.py
+$ python2.7 wuibo/wuibo.py

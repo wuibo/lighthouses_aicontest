@@ -1,1547 +1,1751 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import random, sys
+import random, sys, math, geom
 import interface
-import math
-import time
+import utils
+import numpy as np
 
-class Wuibo(interface.Bot):
-    """Bot de juego"""
-    NAME = "Wuibo"
+class RandBot(interface.Bot):
+    """Bot que juega aleatoriamente."""
+    NAME = "WuiboEE27"
+    E_DIST = 5
+    E_TURN = 6
+    E_FRAC = 3
+    E_LOSS = 10
+    E_PROB = 0.05
 
     def __init__(self,init_state):
         """Inicializar el bot"""
-	self.log("prueba")
-    	self.m_energy = False
-    	self.player_num = init_state["player_num"]
-    	self.player_count = init_state["player_count"]
-    	self.init_pos = init_state["position"]
-    	self.map = init_state["map"]
-    	self.maxy = len(self.map)
-    	self.maxx = len(self.map[0])
-    	self.t_faro = 0
-    	self.maxdist = self.maxx * self.maxy*self.maxx*self.maxy
-    	self.lighthouses = map(tuple, init_state["lighthouses"])
-    	self.light_count = len(self.lighthouses)
-    	#self.idlight = dict()
-    	self.conect_o = []
-    	self.f_mind = -1
-	self.t_turn = 0
-    	#self.log("x: %s",' '.join(str(e) for e in array))
-    	#el indice es el id y el valor (x,y) las coordenadas
-    	#identificador del faro y sus coordenadas (x,y)
-    
-    	#cargar array de movimiento
-    	self.mov = [[self.maxdist,0,0,(-1,-1)],[self.maxdist,0,0,(-1,0)],[self.maxdist,0,0,(-1,+1)],[self.maxdist,0,0,(0,+1)],[self.maxdist,0,0,(+1,+1)],[self.maxdist,0,0,(+1,0)],[self.maxdist,0,0,(+1,-1)],[self.maxdist,0,0,(0,-1)]]
-    	self.movd = [[self.maxdist,(-1,-1)],[self.maxdist,(-1,0)],[self.maxdist,(-1,+1)],[self.maxdist,(0,+1)],[self.maxdist,(+1,+1)],[self.maxdist,(+1,0)],[self.maxdist,(+1,-1)],[self.maxdist,(0,-1)]]
-    	self.ener = [[0,0,(-1,-1)],[0,0,(-1,0)],[0,0,(-1,+1)],[0,0,(0,+1)],[0,0,(+1,+1)],[0,0,(+1,0)],[0,0,(+1,-1)],[0,0,(0,-1)]]
-    			
-        #si usamos dict con posicione idlight no es necesario
-    	start_time = time.time()
-    	"""for x in self.lighthouses:
-    		new = [x,[]]
-    		self.idlight.append(new)
-    
-	self.log("---%s---seconds",str(time.time()-start_time))"""   
+        self.player_num = init_state["player_num"]
+        self.map = init_state["map"]
+        self.maxy = len(self.map)
+        self.maxx = len(self.map[0])
+        self.maxdist = self.maxx * self.maxy # * self.maxx * self.maxy
+        self.lighthouses = map(tuple,init_state["lighthouses"])
+        self.light_count = len(self.lighthouses)
+        self.light_dict = dict()
+        self.turn = 0
+        self.f_turn = 0
 
-    	#cargar distancia a faros
-    	self.light_dist = dict()
-        a_y = []
-        for y in xrange(self.maxy):
-            a_x = []
-    	    for x in xrange(self.maxx):
-                a_x.append(self.maxdist)
-                a_y.append(a_x)
-          
-        for lh in self.lighthouses:
-    	    self.light_dist[lh] = self.flood_dist(lh,a_y)
-            """
-    	    self.log("id: %s cord: %s",i,self.get_cord(i))
-    	    for ty in reversed(range(self.maxy)):
-                array = []
-                for tx in range(self.maxx):
-                    array.append(self.light_dist[i][ty][tx])			
-            self.log("%s",' '.join(str(e).zfill(3) for e in array))
-    	    """
-    	self.log("---%s---seconds",str(time.time()-start_time))
-    	"""
-    	#Energia por turno
-    	self.energi = []
-    	for ey in range(self.maxy):
-    		e_x = []
-    		for ex in range(self.maxx):
-    			i_energi = 0
-    			for lh in  range(self.light_count):
-    				i_dist = self.light_dist[lh][ey][ex]
-    				if(i_dist < 5):
-    					i_energi += 5-self.light_dist[lh][ey][ex]
-    			e_x.append(i_energi)
-    		self.energi.append(e_x)
-    	"""
-    	"""for ty in reversed(range(self.maxy)):
-    		arry = []
-    		for tx in range(self.maxx):
-    			arry.append(self.energi[ty][tx])
-    		self.log("%s",' '.join(str(e).zfill(3) for e in arry))
-    	"""
-    	#carga de triangulos
-    	self.tri_total = int(math.factorial(self.light_count)/(math.factorial(3)*math.factorial(self.light_count-3)))
-    	#self.tri_count = 0
-    	self.tri=[]
-    	fst = 0
-    	snd = 1
-    	cnt = 2
-    	for i in xrange(self.tri_total):
+        """rellenar los faros + energia"""
+        self.energi = np.full((self.maxy,self.maxx),0)
+        for pos in self.lighthouses:
+            """turnos a faro"""
+            self.light_dict[pos] = utils.lighthouse(pos,self.maxy,self.maxx,self.flood_dist(pos))
+            """energia por turno"""
+            for y in xrange(max(0,pos[1]-self.E_DIST+1),min(pos[1]+self.E_DIST,self.maxy-1)):
+                for x in xrange(max(0,pos[0]-self.E_DIST+1),min(pos[0]+self.E_DIST,self.maxx-1)):
+                    dist = geom.dist(pos, (x,y))
+                    delta = int(math.floor(self.E_DIST-dist))
+                    if delta > 0 and self.map[y][x] == 1:
+                        self.energi[y][x] += delta
+
+
+        # crear movimientos
+        self.l_move = []
+        self.l_move.append([-1,-1])
+        self.l_move.append([-1,0])
+        self.l_move.append([-1,+1])
+        self.l_move.append([0,+1])
+        self.l_move.append([+1,+1])
+        self.l_move.append([+1,0])
+        self.l_move.append([+1,-1])
+        self.l_move.append([0,-1])
+
+        """Cargar triangulos"""
+        tri_total = int(math.factorial(self.light_count)/(math.factorial(3)*math.factorial(self.light_count-3)))
+        self.tri = []
+        tri_count = 0
+        fst = 0
+        snd = 1
+        cnt = 2
+        for i in xrange(tri_total):
             cord1 = self.lighthouses[fst]
             cord2 = self.lighthouses[snd]
             cord3 = self.lighthouses[cnt]
-            new = [[cord1,cord2,cord3],0,0,0,0]
-    		
-            #puntos
-            new[2]=self.TrianglePoints(cord1,cord2,cord3)
-            if(new[2] > 0):
-                #perimetro
-                d12 = self.light_dist[cord1][cord2[1]][cord2[0]]
-                d23 = self.light_dist[cord2][cord3[1]][cord3[0]]
-                d31 = self.light_dist[cord3][cord1[1]][cord1[0]]
-                new[3] = d12 + d23 + d31
-                #energía
-                new[4] = (new[3] + 6+new[3]/3) * 10
-                #self.log("(%s): %s",str(new[0]),str(new[2]))
-                #solo tener en cuenta los triangulos con puntos
-                #self.log("tri(%s): points %s perimetro: %s triangulos: %s coordenadas: %s,%s,%s",str(self.tri_count),str(new[2]),str(new[3]),str(new[0]),str(cord1),str(cord2),str(cord3))
-                #self.log("%s",str(new))
-                self.tri.append(new)
-                #self.idlight[fst][1] = self.idlight[fst][1] + [self.tri_count]
-                #self.idlight[snd][1] = self.idlight[snd][1] + [self.tri_count]
-                #self.idlight[cnt][1] = self.idlight[cnt][1] + [self.tri_count]
-                #self.tri_count += 1
-    		#avanzar en la cuenta
-    		cnt += 1
-    		if cnt >= self.light_count:
-                    snd +=1
-                    if snd >= self.light_count-1:
-                        fst +=1
-                        snd = fst +1
-    		    cnt = snd +1
-    		
-    	self.log("---%s---seconds",str(time.time()-start_time))
-    	#inicializar parametros de control e cambios en trinagulo elegido
-    	self.o1 = [-1,-1,-1,-1,-1,-1]
-    	self.o2 = [-1,-1,-1,-1,-1,-1]
-    	self.ee = [-1,-1,-1]	
-	
-    def get_id(self,x,y):
-    	"""Devuelve el id del light house desde las coordenadas"""
-    	for lh in range(self.light_count):
-    		if(self.idlight[lh][0] == (x,y)):
-    			return lh
+            points = self.triangle_points(cord1,cord2,cord3)
+            if points > 0 and self.valid_triangle(cord1,cord2,cord3):
+                d12 = self.light_dict[cord1].get_dist(cord2)
+                d23 = self.light_dict[cord2].get_dist(cord3)
+                d31 = self.light_dict[cord3].get_dist(cord1)
+                perimeter = d12 + d23 +d31
+                energy = (perimeter + self.E_TURN + perimeter/self.E_FRAC)*self.E_LOSS
+                self.tri.append(utils.triangle((cord1,cord2,cord3),points,perimeter,energy))
+                self.light_dict[cord1].add_triangle(tri_count)
+                self.light_dict[cord2].add_triangle(tri_count)
+                self.light_dict[cord3].add_triangle(tri_count)
+                tri_count += 1
+            """avanzar la cuenta"""
+            cnt += 1
+            if cnt >= self.light_count:
+                snd += 1
+                if snd >= self.light_count-1:
+                    fst +=1
+                    snd = fst +1
+                cnt = snd +1
 
-    def get_cord(self,i):
-    	"""Devuelve las coordenadas desde el id"""
-    	return self.idlight[i][0]
-
-    def flood_dist(self,posi,arr_fin):
-        """Flood dist"""
-        (ix,iy) = posi
-    	arr_fin[iy][ix] = 0
-    	loop = 1
-    	arr_act = [[ix,iy]]
-    	arr_nxt = [[-1,-1]]
-    	checked = arr_act
-    	while len(arr_nxt) != 0:
-            arr_nxt = []
-            for cell in arr_act:
-                """234"""
-                """1*5"""
-                """076"""
-                """dire 0"""
-                act = [cell[0]-1,cell[1]-1]
-                if cell[0]>0 and cell[1]>0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 1"""
-                act = [cell[0]-1,cell[1]]
-                if cell[0]>0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 2"""
-                act = [cell[0]-1,cell[1]+1]
-                if cell[0] > 0 and cell[1] < (self.maxy-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 3"""
-                act = [cell[0],cell[1]+1]
-                if cell[1] < (self.maxy-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 4"""
-                act = [cell[0]+1,cell[1]+1]
-                if cell[0] < (self.maxx-1) and cell[1] < (self.maxy-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 5"""
-                act = [cell[0]+1,cell[1]]
-                if cell[0] < (self.maxx-1):
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 6"""
-                act = [cell[0]+1,cell[1]-1]
-                if cell[0] < (self.maxx-1) and cell[1] > 0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-                """dire 7"""
-                act = [cell[0],cell[1]-1]
-                if cell[1] > 0:
-                    if self.map[act[1]][act[0]] == 1 and act not in checked:
-                        arr_nxt = arr_nxt + [act]
-                        arr_fin[act[1]][act[0]] = loop
-                        checked = checked + [act]
-            arr_act = arr_nxt
-            loop += 1
-        return arr_fin
-	
-    def sign(self,p1,p2,p3):
-	    return (p1[0] - p3[0]) * (p2[1]-p3[1]) - (p2[0]-p3[0]) * (p1[1] - p3[1])
-
-    def PointInAABB(self,pt, c1,c2):
-	    return c2[0] <= pt[0] <= c1[0] and c2[1] <= pt[1] <= c1[1]
-
-    def PointInTriangle(self,pt,t1,t2,t3):
-    	b1 = self.sign(pt,t1,t2) <= 0
-    	b2 = self.sign(pt,t2,t3) <= 0
-    	b3 = self.sign(pt,t3,t1) <= 0
-    	return  ((b1 == b2) and (b2 == b3)) and \
-    		self.PointInAABB(pt,map(max,t1,t2,t3),map(min,t1,t2,t3))
-
-    def TrianglePoints(self,t1,t2,t3):
-    	cnt = 0
-    	max_x = max(t1[0],t2[0],t3[0])
-    	min_x = min(t1[0],t2[0],t3[0])
-    	max_y = max(t1[1],t2[1],t3[1])
-    	min_y = min(t1[1],t2[1],t3[1])
-    	for i_x in xrange(min_x,max_x+1):
-    		for i_y in xrange(min_y,max_y+1):
-    			if self.PointInTriangle((i_x,i_y),t1,t2,t3) and self.map[i_y][i_x] == 1:
-    				cnt += 1
-    	return cnt
-
-    def gradient(self,l):
-    	#Devuelve el gradiente m de una linea
-    	m = None
-    	#asegurar que la línea no es vertical
-    	if l[0][0] != l[1][0]:
-    		m = (1./(l[0][0]-l[1][0]))*(l[0][1] - l[1][1])
-    	return m
-
-    def parallel(self,l1,l2):
-	    return self.gradient(l1) == self.gradient(l2)
-
-    def crosing(self,l1,l2):
-    	if(l1[0] == l2[0] or l1[0] == l2[1] or l1[1] == l2[0] or l1[1] == l2[1]):
-    		return False
-    	if max(l1[0][0],l1[1][0]) < min(l2[0][0],l2[1][0]):
-    		#Distinta proyección X
-    		return False
-    	A1 = self.gradient(l1)
-    	A2 = self.gradient(l2)
-    	if(A1 == A2):
-    		#son paralelas
-    		return False
-    	if l1[0][0] == l1[1][0]:
-    		#lina 1 vertical
-    		Xa = l1[0][0]
-    		b2 = l2[0][1] - l2[0][0]*A2
-    		y2 = Xa*A2+b2
-    		if(y2 > max(l1[0][1],l1[1][1]) or y2 < min(l1[0][1],l1[1][1])):
-    			return False
-    		else:
-    			return True
-    	elif l2[0][0] == l2[1][0]:
-    		#linea 2 vertical
-    		Xa = l2[0][0]
-    		b1 = l1[0][1] - l1[0][0]*A1
-    		y1 = Xa*A1+b1
-    		if(y1 > max(l2[0][1],l2[1][1]) or y1 < max(l2[0][1],l2[1][1])):
-    			return False
-    		else:
-    			return True
-    	else:
-    		b1 = l1[0][1]-l1[0][0]*A1
-    		b2 = l2[0][1]-l2[0][0]*A2
-    		Xa = (b2 - b1)/(A1-A2)
-    		if ((Xa < max(min(l1[0][0],l1[1][0]),min(l2[0][0],l2[1][0]))) or \
-    			(Xa > min(max(l1[0][0],l1[1][0]),max(l2[0][0],l2[1][0])))):
-    			return False
-    		else:
-    			return True	
+     
 
 
     def play(self, state):
         """Jugar: llamado cada turno.
         Debe devolver una acción (jugada)."""
-    	#posición actual
         cx, cy = state["position"]
-    	#cargar la situación de los faros
         lighthouses = dict((tuple(lh["position"]), lh)
-                                for lh in state["lighthouses"]) 
-	#incluir gestión de prob
-	self.t_turn += 1
-        for tr in self.tri:
-            for ti in tr[0]:
-                if lighthouses[ti[0]]["owner"] >= 0 and lighthouses[ti[0]]["owner"] != self.player_num:
-                    self.tri[lt][1] += 1
-                    break
-    	self.log("energi: %s position: %s t_faro: %s",state["energy"],state["position"],self.t_faro)
-    	
-    	#Gestión de vista
-    	view = state["view"]
-    	view_y = len(view)
-    	view_x = len(view[0])
-    	view_cx = view_x/2
-    	view_cy = view_y/2
-    
-    	start_time = time.time()
-    	self.log("PreObjetive: %s, %s",str(self.o1[4]),str(self.o1[5]))
-    	#nuevo objetivo
-    	self.get_objetive(lighthouses,cx,cy)
-	self.log("PostObjetive: %s, %s",str(self.o1[4]),str(self.o1[5]))
-	self.log("---%s---seconds",str(time.time()-start_time))
-    	"""
-    	if(self.o1[0] >= 0):
-    		if(self.m_energy):
-    			#el anterior movimiento ha sido para energia
-    			self.log("Anterior por energia: %s",str(self.m_energy))
-    			self.get_objetive(lighthouses,key_id,cx,cy)
-    		else:	
-    			#ya ha un objetivo elegido y el anterior no fue por movimiento
-    			if not(self.ee[0]==lighthouses[self.get_cord(self.tri[self.o1[0]][0][0])]["energy"] and \
-    			self.ee[1]==lighthouses[self.get_cord(self.tri[self.o1[0]][0][1])]["energy"] and \
-    			self.ee[2]==lighthouses[self.get_cord(self.tri[self.o1[0]][0][2])]["energy"]):
-    					
-    				#a cambiado elegir o1
-    				self.log("Cambio de energia")
-    				self.get_objetive(lighthouses,key_id,cx,cy)
-    	else:
-    		#elegir o1
-    		self.log("No había selección")
-    		self.get_objetive(lighthouses,key_id,cx,cy)	
-    	"""
-    	self.log("triangulo: %s faros [%s %s,%s %s,%s %s]",str(self.o1[0]),
-    	str(self.tri[self.o1[0]][0][0]),str(self.get_cord(self.tri[self.o1[0]][0][0])),
-    	str(self.tri[self.o1[0]][0][1]),str(self.get_cord(self.tri[self.o1[0]][0][1])),
-    	str(self.tri[self.o1[0]][0][2]),str(self.get_cord(self.tri[self.o1[0]][0][2])))
-    
-    	(nx,ny) = self.get_cord(self.o1[4])
-    	#comprobar si movimiento por energía
-    	if lighthouses[(nx,ny)]["owner"] == self.player_num:
-			#si es propio a por el
-    		a_energy = self.tri[self.o1[0]][4] - lighthouses[(nx,ny)]["energy"]
-    		if(state["energy"]>a_energy):
-    		    a_energy += (state["energy"]-a_energy)/2
-    		self.m_energy = False
-    	else:
-			#no es propi
-    		f_cnt = 0
-    		for f in self.tri[self.o1[0]][0]:
-    			(fx,fy) = self.get_cord(f)
-    			if lighthouses[(fx,fy)]["owner"] == self.player_num:
-    				f_cnt += 1
-    		if f_cnt > 0:
-				#si ya tenemos alguno y tenemos más energía que el faro
-				if lighthouses[(nx,ny)]["energy"] < state["energy"]:
-					n_ener = self.tri[self.o1[0]][4] - self.tri[self.o1[0]][4]*f_cnt/3 + lighthouses[(nx,ny)]["energy"]
-					y_ener = state["energy"] + self.light_dist[self.o1[4]][cy][cx]*10
-					if n_ener > y_ener:
-						self.m_energy = True
-					else:
-						a_energy = n_ener + (state["energy"]-n_ener)/2
-						self.m_energy = False
-				else:
-				    self.m_energy = True
-    		else:
-				#no tenemos ninguno, mirar energía
-        	    n_ener = lighthouses[(nx,ny)]["energy"] + self.tri[self.o1[0]][4]
-        	    y_ener = state["energy"] + self.light_dist[self.o1[4]][cy][cx]*10
-        	    self.log("need: %s yo: %s",str(n_ener),str(y_ener))
-        	    if n_ener > y_ener:
-        	    	self.m_energy = True
-        	    else:
-        	    	a_energy = n_ener + (state["energy"]-n_ener)/2
-        	    	self.m_energy = False
-    
-    	#si estamos en el faro vamos a por el (atack,connect)
-    	self.log("yo: (%s,%s) dest: %s (%s,%s) cnd: %s",str(cx),str(cy),str(self.o1[4]),str(nx),str(ny),str(self.o1[5]))
-    	#acciones par ir a por el faro
-    	temp_id = self.get_id(cx,cy)
-    	#if (cx, cy) in lighthouses and temp_id in self.tri[self.o1[0]][0] and self.m_energy == False:
-	if ((cx, cy) in lighthouses and temp_id == self.o1[4] and self.m_energy == False) or self.t_faro == 1:
-    		my_id = self.get_id(cx,cy)
-    		#estamos en el faro
-    		if self.t_faro == 1:
-    			possible_connections = []
-    			for dest in lighthouses:
-    				#no conectar con sigo mismo
-    				#no conectar si no tenemos llave
-    				#no conectar si ya estań conectardos
-    				#no conectar si hay cruces
-    				#no conectar si no controlamos el destino
-    				did = self.get_id(dest[0],dest[1])
-    				if (dest != (cx,cy) and
-    				    lighthouses[dest]["have_key"] and
-    				    [cx,cy] not in lighthouses[dest]["connections"] and
-    				    not(self.check_croses(lighthouses,did,my_id)) and
-    				    lighthouses[dest]["owner"] == self.player_num):
-    				    possible_connections.append(dest)
-    			if possible_connections:
-    				self.t_faro = 2
-    				self.log("CONNECT: %s",''.join(str(e) for e in possible_connections))
-    				if len(possible_connections) > 1:
-    					pc_td = 0
-    					pc_i = -1
-    					for pc in possible_connections:
-    						pc_id = self.get_id(pc[0],pc[1])
-    						pc_d = self.light_dist[pc_id][cy][cx]
-    						if pc_d > pc_td:
-    							pc_td = pc_d
-    							pc_i = pc
-    					return self.connect(pc_i)
-    				else:
-    					return self.connect(random.choice(possible_connections))
-    		elif self.t_faro == 0:
-    			if(state["energy"] >= 5):
-    				self.t_faro = 1
-    				self.log("ATTACK: %s",a_energy)
-    				return self.attack(a_energy)
-    	self.t_faro = 0	
-    
-    	#no estamos en el faro o ya hemos realizado las acciones
-    	#buscar el siguiente faro
-    	at = self.tri[self.o1[0]]
-    	#comprobar si ya tengo el siguiente
-    	if(cx == nx and cy == ny):
-    		self.log("Ya lo tenemos siguiente (%s,%s), %s",str(nx),str(ny),str(lighthouses[(nx,ny)]["have_key"]))
-    		#buscar siguiente destino
-    		#comprobar si tiene conexión con alguno
-    		ncon = [] #id de los que no están conectados
-    		otros = [] #coordenadas del resto de faros
-    		self.log("ya conectados: %s", ''.join(str(e) for e in lighthouses[(nx,ny)]["connections"]))
-    		for ll in at[0]:
-    			if ll != self.o1[4]:
-    				#no es el propio
-    				cordn = self.get_cord(ll)
-    				otros = otros + [cordn]
-    				if ([cordn[0],cordn[1]] not in lighthouses[(nx,ny)]["connections"]):
-    					self.log("cord no: %s",str(cordn))
-    					ncon = ncon + [ll]
-    		self.log("No conectados: %s",' '.join(str(e) for e in ncon))
-    		self.log("Otros: %s",' '.join(str(e) for e in otros))
-    		if len(ncon) == 0:
-    			#comprobar la conexión entre los otros dos
-    			if ([otros[0][0],otros[0][1]] not in lighthouses[otros[1]]["connections"]):
-    				#no están conectados
-    				#buscar el cercano
-    				id1 = self.get_id(otros[0][0],otros[0][1])
-    				id2 = self.get_id(otros[1][0],otros[1][1])
-    				td1 = self.light_dist[id1][cy][cx]
-    				td2 = self.light_dist[id2][cy][cx]
-    				if(td1 < td2):
-    					self.o1[4] = id1
-    				else:
-    					self.o1[4] = id2
-    				self.o1[5] = -1
-    			else:
-    				#ya lo tenemos, buscar otro
-    				self.log("Triangulo completo")
-    				self.get_objetive(lighthouses,key_id,cx,cy)
-    		elif len(ncon) == 2:
-    			#ninguna conexión
-    			#ir a por el más cercano
-    			id1 = self.get_id(otros[0][0],otros[0][1])
-    			id2 = self.get_id(otros[1][0],otros[1][1])
-    			td1 = self.light_dist[id1][cy][cx]
-    			td2 = self.light_dist[id2][cy][cx]
-    			self.o1[5] = self.o1[4]
-    			if(td1 < td2):
-    				self.o1[4] = id1
-    			else:
-    				self.o1[4] = id2
-    		else:
-    			#hay uno al siguiente
-    			self.o1[5] = self.o1[4]
-    			self.o1[4] = ncon[0]
-    
-    	
-    	self.log("PreMover: %s,%s",str(self.o1[4]),str(self.o1[5]))
-    	#nos vamos a mover
-    	for i in xrange(3):
-    		cordl = self.get_cord(self.tri[self.o1[0]][0][i])
-    		if(lighthouses[cordl]["energy"] <= 10):
-    			self.ee[i] = 0
-    		else:
-    			self.ee[i] = lighthouses[cordl]["energy"]-10
-    	
-    	#comprobar energía, ir o cargar
-    	if not(self.m_energy):		
-    		#energía suficiente, a por el
-    		if self.check_croses(lighthouses,self.o1[4],self.o1[5]):
-    			if not(lighthouses[(self.conect_o[0][0],self.conect_o[0][1])]["owner"] == self.player_num):
-    				t_id1 = self.get_id(self.conect_o[0][0],self.conect_o[0][1])
-    				t_id2 = self.get_id(self.conect_o[1][0],self.conect_o[1][1])
-    				td1 = self.light_dist[t_id1][cy][cx]
-    				td2 = self.light_dist[t_id2][cy][cx]
-    				if td1 < td2:
-    					temp_des = t_id1
-    				else:
-    					temp_des = t_id2
-    			else:
-    				#el más cercano no mio
-    				temp_des = self.f_mind
-    		else:
-    			temp_des = self.o1[4]
-    		#No estamos en el faro o ya esta conectado
-    		if(cx==0 and cy==0):
-    			"""left-down"""
-    			self.movd[0][0] = self.maxdist
-    			self.movd[1][0] = self.maxdist
-    			self.movd[2][0] = self.maxdist
-    			self.movd[3][0] = self.light_dist[temp_des][cy+1][cx]
-    			self.movd[4][0] = self.light_dist[temp_des][cy+1][cx+1]
-    			self.movd[5][0] = self.light_dsit[temp_des][cy][cx+1]
-    			self.movd[6][0] = self.maxdist
-    			self.movd[7][0] = self.maxdist
-    		elif(cy==0 and cx>0 and cx<(self.maxx-1)):
-    			"""down"""
-    			self.movd[0][0] = self.maxdist
-    			self.movd[1][0] = self.light_dist[temp_des][cy][cx-1]
-    			self.movd[2][0] = self.light_dist[temp_des][cy+1][cx-1]
-    			self.movd[3][0] = self.light_dist[temp_des][cy+1][cx]
-    			self.movd[4][0] = self.light_dist[temp_des][cy+1][cx+1]
-    			self.movd[5][0] = self.light_dist[temp_des][cy][cx+1]
-    			self.movd[6][0] = self.maxdist
-    			self.movd[7][0] = self.maxdist
-    		elif(cy==0 and cx==(self.maxx-1)):
-    			"""right-down"""
-    			self.movd[0][0] = self.maxdist
-    			self.movd[1][0] = self.light_dist[temp_des][cy][cx-1]
-    			self.movd[2][0] = self.light_dist[temp_des][cy+1][cx-1]
-    			self.movd[3][0] = self.light_dist[temp_des][cy+1][cx]
-    			self.movd[4][0] = self.maxdist
-    			self.movd[5][0] = self.maxdist
-    			self.movd[6][0] = self.maxdist
-    			self.movd[7][0] = self.maxdist
-    		elif(cx==(self.maxx-1) and cy>0 and cy<(self.maxy-1)):
-    			"""right"""
-    			self.movd[0][0] = self.light_dist[temp_des][cy-1][cx-1]
-    			self.movd[1][0] = self.light_dist[temp_des][cy][cx-1]
-    			self.movd[2][0] = self.light_dist[temp_des][cy+1][cx-1]
-    			self.movd[3][0] = self.light_dist[temp_des][cy+1][cx]
-    			self.movd[4][0] = self.maxdist
-    			self.movd[5][0] = self.maxdist
-    			self.movd[6][0] = self.maxdist
-    			self.movd[7][0] = self.light_dist[temp_des][cy-1][cx] 
-    		elif(cx==(self.maxx-1) and cy==(self.maxy-1)):
-    			"""right-up"""
-    			self.movd[0][0] = self.light_dist[temp_des][cy-1][cx-1]
-    			self.movd[1][0] = self.light_dist[temp_des][cy][cx-1]
-    			self.movd[2][0] = self.maxdist
-    			self.movd[3][0] = self.maxdist
-    			self.movd[4][0] = self.maxdist
-    			self.movd[5][0] = self.maxdist
-    			self.movd[6][0] = self.maxdist
-    			self.movd[7][0] = self.light_dist[temp_des][cy-1][cx]
-    		elif(cy==(self.maxy-1) and cx>0 and cx<(self.maxx-1)):
-    			"""up""" 
-    			self.movd[0][0] = self.light_dist[temp_des][cy-1][cx-1]
-    			self.movd[1][0] = self.light_dist[temp_des][cy][cx-1]
-    			self.movd[2][0] = self.maxdist
-    			self.movd[3][0] = self.maxdist
-    			self.movd[4][0] = self.maxdist
-    			self.movd[5][0] = self.light_dist[temp_des][cy][cx+1]
-    			self.movd[6][0] = self.light_dist[temp_des][cy-1][cx+1]
-    			self.movd[7][0] = self.light_dist[temp_des][cy-1][cx]
-    		elif(cy==(self.maxy-1) and cx==0):
-    			"""left-up""" 
-    			self.movd[0][0] = self.maxdist
-    			self.movd[1][0] = self.maxdist
-    			self.movd[2][0] = self.maxdist
-    			self.movd[3][0] = self.maxdist
-    			self.movd[4][0] = self.maxdist
-    			self.movd[5][0] = self.light_dist[temp_des][cy][cx+1]
-    			self.movd[6][0] = self.light_dist[temp_des][cy-1][cx+1]
-    			self.movd[7][0] = self.light_dist[temp_des][cy-1][cx]
-    		elif(cx==0 and cy>0 and cy<(self.maxy-1)):
-    			"""left""" 
-    			self.movd[0][0] = self.maxdist
-    			self.movd[1][0] = self.maxdist
-    			self.movd[2][0] = self.maxdist
-    			self.movd[3][0] = self.light_dist[temp_des][cy+1][cx]
-    			self.movd[4][0] = self.light_dist[temp_des][cy+1][cx+1]
-    			self.movd[5][0] = self.light_dist[temp_des][cy][cx+1]
-    			self.movd[6][0] = self.light_dist[temp_des][cy-1][cx+1]
-    			self.movd[7][0] = self.light_dist[temp_des][cy-1][cx] 
-    		else:
-    			self.movd[0][0] = self.light_dist[temp_des][cy-1][cx-1]
-    			self.movd[1][0] = self.light_dist[temp_des][cy][cx-1]
-    			self.movd[2][0] = self.light_dist[temp_des][cy+1][cx-1]
-    			self.movd[3][0] = self.light_dist[temp_des][cy+1][cx]
-    			self.movd[4][0] = self.light_dist[temp_des][cy+1][cx+1]
-    			self.movd[5][0] = self.light_dist[temp_des][cy][cx+1]
-    			self.movd[6][0] = self.light_dist[temp_des][cy-1][cx+1]
-    			self.movd[7][0] = self.light_dist[temp_des][cy-1][cx] 
-    	
-    
-    		#cargar energia
-    		self.ener[0][0] = view[view_cy-1][view_cx-1]
-    		self.ener[1][0] = view[view_cy][view_cx-1]
-    		self.ener[2][0] = view[view_cy+1][view_cx-1]
-    		self.ener[3][0] = view[view_cy+1][view_cx]
-    		self.ener[4][0] = view[view_cy+1][view_cx+1]
-    		self.ener[5][0] = view[view_cy][view_cx+1]
-    		self.ener[6][0] = view[view_cy-1][view_cx+1]
-    		self.ener[7][0] = view[view_cy-1][view_cx]
-    
-    		next_m_dist = self.maxdist
-    		next_m_ener = 0
-    		next_m = (0,0)
-    		for mv in xrange(8):
-    			if(self.movd[mv][0] < next_m_dist):
-    				next_m_dist = self.movd[mv][0]
-    				next_m = self.movd[mv][1]
-    				next_m_ener = self.ener[mv][0]
-    			elif(self.movd[mv][0] == next_m_dist):
-    				if(next_m_ener < self.ener[mv][0]):
-    					next_m_dist = self.movd[mv][0]
-    					next_m = self.movd[mv][1]
-    					next_m_ener = self.ener[mv][0]
-    		self.log("Destino: %s [%s]",str(temp_des),str(self.get_cord(temp_des)))
-    		self.log("Move objetive. move_x: %s move_y: %s",next_m[0],next_m[1])
-    		return self.move(next_m[0],next_m[1])
-    
-    	else:
-    		#no hay energia suficiente, cargar
-    		#cargar energia
-    		t_ener0 = view[view_cy-2][view_cx-2]
-    		t_ener1 = view[view_cy-1][view_cx-2]
-    		t_ener2 = view[view_cy][view_cx-2]
-    		t_ener3 = view[view_cy][view_cx-1]
-    		t_ener4 = view[view_cy][view_cx]
-    		t_ener5 = view[view_cy-1][view_cx]
-    		t_ener6 = view[view_cy-2][view_cx]
-    		t_ener7 = view[view_cy-2][view_cx-1]
-    		self.ener[0][0] = view[view_cy-1][view_cx-1]
-    		self.ener[0][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    		
-    		t_ener0 = view[view_cy-1][view_cx-2]
-    		t_ener1 = view[view_cy][view_cx-2]
-    		t_ener2 = view[view_cy+1][view_cx-2]
-    		t_ener3 = view[view_cy+1][view_cx-1]
-    		t_ener4 = view[view_cy+1][view_cx]
-    		t_ener5 = view[view_cy][view_cx]
-    		t_ener6 = view[view_cy-1][view_cx]
-    		t_ener7 = view[view_cy-1][view_cx-1]
-    		self.ener[1][0] = view[view_cy][view_cx-1] 
-    		self.ener[1][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    	
-    		t_ener0 = view[view_cy][view_cx-2]
-    		t_ener1 = view[view_cy+1][view_cx-2]
-    		t_ener2 = view[view_cy+2][view_cx-2]
-    		t_ener3 = view[view_cy+2][view_cx-1]
-    		t_ener4 = view[view_cy+2][view_cx]
-    		t_ener5 = view[view_cy+1][view_cx]
-    		t_ener6 = view[view_cy][view_cx]
-    		t_ener7 = view[view_cy][view_cx-1]
-    		self.ener[2][0] = view[view_cy+1][view_cx-1] 
-    		self.ener[2][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    
-    		t_ener0 = view[view_cy][view_cx-1]
-    		t_ener1 = view[view_cy+1][view_cx-1]
-    		t_ener2 = view[view_cy+2][view_cx-1]
-    		t_ener3 = view[view_cy+2][view_cx]
-    		t_ener4 = view[view_cy+2][view_cx+1]
-    		t_ener5 = view[view_cy+1][view_cx+1]
-    		t_ener6 = view[view_cy][view_cx+1]
-    		t_ener7 = view[view_cy][view_cx]
-    		self.ener[3][0] = view[view_cy+1][view_cx] 
-    		self.ener[3][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    
-    		t_ener0 = view[view_cy][view_cx]
-    		t_ener1 = view[view_cy+1][view_cx]
-    		t_ener2 = view[view_cy+2][view_cx]
-    		t_ener3 = view[view_cy+2][view_cx+1]
-    		t_ener4 = view[view_cy+2][view_cx+2]
-    		t_ener5 = view[view_cy+1][view_cx+2]
-    		t_ener6 = view[view_cy][view_cx+2]
-    		t_ener7 = view[view_cy][view_cx+1]
-    		self.ener[4][0] = view[view_cy+1][view_cx+1] 
-    		self.ener[4][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    
-    		t_ener0 = view[view_cy-1][view_cx]
-    		t_ener1 = view[view_cy][view_cx]
-    		t_ener2 = view[view_cy+1][view_cx]
-    		t_ener3 = view[view_cy+1][view_cx+1]
-    		t_ener4 = view[view_cy+1][view_cx+2]
-    		t_ener5 = view[view_cy][view_cx+2]
-    		t_ener6 = view[view_cy-1][view_cx+2]
-    		t_ener7 = view[view_cy-1][view_cx+1]
-    		self.ener[5][0] = view[view_cy][view_cx+1] 
-    		self.ener[5][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    
-    		t_ener0 = view[view_cy-2][view_cx]
-    		t_ener1 = view[view_cy-1][view_cx]
-    		t_ener2 = view[view_cy][view_cx]
-    		t_ener3 = view[view_cy][view_cx+1]
-    		t_ener4 = view[view_cy][view_cx+2]
-    		t_ener5 = view[view_cy-1][view_cx+2]
-    		t_ener6 = view[view_cy-2][view_cx+2]
-    		t_ener7 = view[view_cy-2][view_cx+1]
-    		self.ener[6][0] = view[view_cy-1][view_cx+1]
-    		self.ener[6][1] = max(t_ener0,t_ener1,t_ener2,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
-    
-    		t_ener0 = view[view_cy-2][view_cx-1]
-    		t_ener1 = view[view_cy-1][view_cx-1]
-    		t_ener2 = view[view_cy][view_cx-1]
-    		t_ener3 = view[view_cy][view_cx]
-    		t_ener4 = view[view_cy][view_cx+1]
-    		t_ener5 = view[view_cy-1][view_cx+1]
-    		t_ener6 = view[view_cy-2][view_cx+1]
-    		t_ener7 = view[view_cy-2][view_cx]
-    		self.ener[7][0] = view[view_cy-1][view_cx]
-    		self.ener[7][1] = max(t_ener0,t_ener1,t_ener2,t_ener4,t_ener5,t_ener6,t_ener7)
-    
-    		"""234"""
-    		"""1*5"""
-    		"""076"""
-    		next_m_ener = 0
-    		next_m = (0,0)
-    		next_m_e2 = 0
-    		for mv in xrange(8):
-    		    if ((cy+self.ener[mv][2][1]) >= 0 and (cy+self.ener[mv][2][1]) < self.maxy and (cx+self.ener[mv][2][0]) >= 0 and (cx+self.ener[mv][2][0]) < self.maxx):
-        			if(next_m_ener < self.ener[mv][0] and self.map[cy+self.ener[mv][2][1]][cx+self.ener[mv][2][0]] ==1):
-        				next_m_ener = self.ener[mv][0]
-        				next_m = self.ener[mv][2]
-        				next_m_e2 = self.ener[mv][1]
-        			elif (next_m_ener == self.ener[mv][0]):
-        			    if next_m_e2 < self.ener:
-        			    	next_m_ener = self.ener[mv][0]
-        			    	next_m = self.ener[mv][2]
-        			    	next_m_e2 = self.ener[mv][1]
-    		self.log("Move ener: move_x: %s move_y: %s",next_m[0],next_m[1])
-    		return self.move(next_m[0],next_m[1])
+                            for lh in state["lighthouses"])
 
-    def check_croses(self,light,f1,f2):
-    	self.conect_o = []
-    	if f1 == -1 or f2 == -1:
-    		return False
-    	cord1 = self.get_cord(f1)
-    	cord2 = self.get_cord(f2)
-    	for l in light:
-    		for c in light[l]["connections"]:
-    			if self.crosing([cord1,cord2],[l,(c[0],c[1])]):
-    				self.conect_o = self.conect_o + [l]
-    				self.conect_o = self.conect_o + [c]
-    				return True
-    	return False
-		
-		
+        self.log("Posicion: %s",str((cx,cy)))
+        self.turn += 1
+        # Ocupación de los faros
+        for pos,lh in lighthouses.iteritems():
+            if lh["owner"] >= 0 and lh["owner"] != self.player_num:
+                self.light_dict[pos].sum_ocupied()
+
+        # Gestión de vista
+        view = state["view"]
+        view_y = len(view)
+        view_x = len(view[0])
+        view_cx = view_x/2
+        view_cy = view_y/2
+
+        # establecer objetivo
+        obj = self.get_objetive(lighthouses,cx,cy)
+        self.log("Objetivo: %s Conexion: %s", str(obj.get_next()),str(obj.get_connect()))
+
+        # comprobar energia
+        if state["energy"] < obj.get_energy():
+            # movimiento por energia
+            temp_move = [0,0]
+            temp_ener = [0,0]
+            for mov in self.l_move:
+                ymov_view = view_cy + mov[1]
+                xmov_view = view_cx + mov[0]
+                t_ener0 = view[ymov_view -1][xmov_view -1]
+                t_ener1 = view[ymov_view +0][xmov_view -1]
+                t_ener2 = view[ymov_view +1][xmov_view -1]
+                t_ener3 = view[ymov_view +1][xmov_view +0]
+                t_ener4 = view[ymov_view +1][xmov_view +1]
+                t_ener5 = view[ymov_view +0][xmov_view +1]
+                t_ener6 = view[ymov_view -1][xmov_view +1]
+                t_ener7 = view[ymov_view -1][xmov_view + 0]
+                s_ener = max(t_ener0,t_ener1,t_ener3,t_ener4,t_ener5,t_ener6,t_ener7)
+                b_ener = view[ymov_view][xmov_view]
+                if b_ener > temp_ener[0]:
+                    # mejor energia, cambio
+                    temp_move = mov
+                    temp_ener = [b_ener,s_ener]
+                elif b_ener == temp_ener[0]:
+                    # igual comparar segunda
+                    if s_ener > temp_ener[1]:
+                        temp_move = mov
+                        temp_ener = [b_ener,s_ener]
+                    elif s_ener == temp_ener[1]:
+                        # mirar cual nos acerca más al faro
+                        temp_dist = self.light_dict[obj.get_next()].get_dist((cx+temp_move[0],cy+temp_move[1]))
+                        act_dist = self.light_dict[obj.get_next()].get_dist((cx+mov[0],cy+mov[1]))
+                        if act_dist < temp_dist:
+                            temp_move = mov
+                            temp_ener = [b_ener,s_ener]
+                # en caso de que la temporal se mayor nada
+            self.f_turn = 0
+            self.log("Move energy. move_x: %s move_y: %s",temp_move[0],temp_move[1])
+            return self.move(temp_move[0],temp_move[1])
+        else:
+            # movimiento al objetivo
+            if (cx,cy) == obj.get_next():
+                # estamos en el objetivo
+                if obj.get_energy() > 0 and self.f_turn == 0:
+                    # Atacar
+                    self.f_turn = 1
+                    a_energy = obj.get_energy() + (state["energy"] - obj.get_energy())/2
+                    self.log("Attack: %s" ,a_energy)
+                    return self.attack(a_energy)
+                else:
+                    # no es necesario atacar, conectar
+                    self.f_turn = 1
+                    self.log("Connect %s",str(obj.get_connect()))
+                    return self.connect(obj.get_connect())
+            else:
+                # no estamos a moverse
+                temp_dist = self.maxdist
+                temp_ener = 0
+                temp_move = (0,0)
+                for mov in self.l_move:
+                    ymov_view = mov[1] + view_cy
+                    xmov_view = mov[0] + view_cx
+                    ymov = mov[1] + cy
+                    xmov = mov[0] + cx
+                    dist = self.light_dict[obj.get_next()].get_dist((xmov,ymov))
+                    temp_ener = view
+                    if dist < temp_dist:
+                        temp_ener = view[ymov_view][xmov_view]
+                        temp_move = mov
+                        temp_dist = dist
+                    elif dist == temp_dist:
+                        # comprobar energia
+                        ener = view[ymov_view][xmov_view]
+                        if ener > temp_ener:
+                            temp_ener = ener
+                            temp_dist = dist
+                            temp_move = mov
+                self.f_turn = 0
+                self.log("Move objetive mov_x: %s move_y: %s",temp_move[0],temp_move[1])
+                return self.move(temp_move[0],temp_move[1])
+            
+
+    def flood_dist(self,pos):
+        """Devuelve el mapa de distancia (en turnos) a la posición dada"""
+        temp_arr = np.full((self.maxy,self.maxx),self.maxdist)
+        (ix,iy) = pos
+        temp_arr[iy][ix] = 0
+        loop = 1
+        arr_act = [[ix,iy]]
+        arr_nxt = [[-1,-1]]
+        checked = arr_act
+        while len(arr_nxt) != 0:
+            arr_nxt = []
+            for cell in arr_act:
+                """234"""
+                """1*5"""
+                """076"""
+
+                """Dir 0"""
+                act = [cell[0]-1,cell[1]-1]
+                if cell[0]>0 and cell[1]>0:
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 1"""
+                act = [cell[0]-1,cell[1]]
+                if cell[0]>0:
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 2"""
+                act = [cell[0]-1,cell[1]+1]
+                if cell[0]>0 and cell[1] < (self.maxy-1):
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 3"""
+                act = [cell[0],cell[1]+1]
+                if cell[1] < (self.maxy-1):
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 4"""
+                act = [cell[0]+1,cell[1]+1]
+                if cell[0] < (self.maxx-1) and cell[1] < (self.maxy -1):
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 5"""
+                act = [cell[0]+1,cell[1]]
+                if cell[0] < (self.maxx-1):
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 6"""
+                act = [cell[0]+1,cell[1]-1]
+                if cell[0] < (self.maxx-1) and cell[1] > 0:
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+
+                """Dir 7"""
+                act = [cell[0],cell[1]-1]
+                if cell[1] > 0:
+                    if self.map[act[1]][act[0]] == 1 and act not in checked:
+                        arr_nxt = arr_nxt + [act]
+                        temp_arr[act[1]][act[0]] = loop
+                        checked = checked + [act]
+            arr_act = arr_nxt
+            loop += 1
+        return temp_arr
+
+    def triangle_points(self,p1,p2,p3):
+        """celdas en el triangulo formado por los puntos dados"""
+        cells = [j for j in geom.render((p1,p2,p3)) if self.map[j[1]][j[0]]==1]
+        return len(cells)
+
+    def valid_triangle(self,p1,p2,p3):
+        # 1 con 2
+        x10,x11 = sorted((p1[0],p2[0]))
+        y10,y11 = sorted((p1[1],p2[1]))
+        # 2 con 3
+        x20,x21 = sorted((p2[0],p3[0]))
+        y20,y21 = sorted((p2[1],p3[1]))
+        # 3 con 1
+        x30,x31 = sorted((p3[0],p1[0]))
+        y30,y31 = sorted((p3[1],p1[1]))
+        for lh in self.light_dict.keys():
+            if (x10 <= lh[0] <= x11 and y10 <= lh[1] <= y11 and
+                    lh not in (p1,p2) and
+                    geom.colinear(p1,p2,lh)):
+                return False
+            if (x20 <= lh[0] <= x21 and y20 <= lh[1] <= y21 and
+                    lh not in (p2,p3) and
+                    geom.colinear(p2,p3,lh)):
+                return False
+            if (x30 <= lh[0] <= x31 and y30 <= lh[1] <= y31 and
+                    lh not in (p3,p1) and
+                    geom.colinear(p3,p1,lh)):
+                return False
+        return True
 
     def get_objetive(self,lhs,cx,cy):
-        self.log("CAMBIO OBJETIVO (%s)",str(self.o1[0]))
-    	self.o2 = [-1,-1,(self.maxdist * 4),-1,-1,-1]
-    	to = -1 #temporal objetive
-    	f_min = self.maxdist
-    	f_d = -1
-        #distancía al faro más cercano sin llave
-    	for il in lhs:
-            td = self.light_dist[il["position"]][cy][cx]
-            #del que no tengamos llave
-            if td < f_min and il not il["have_key"]:
+        """seleccionar devuelve un objeto objetivo"""
+        to = -1
+        t_tri = -1 # triangulo temporal
+        t_turn = -1 # turnos requeridos temporal
+        f_min = self.maxdist
+        f_d = -1
+        # distancia la faro más cercano
+        for pos,lh in lhs.iteritems():
+            td = self.light_dict[pos].get_dist((cx,cy))
+            if td < f_min and not lh["have_key"]:
                 f_min = td
-                f_d = il["position"]
-    	for tr in self.tri:
-            cnd = [] #los que tenemos - con llave o sin llave
-            otros = [] #el resto
-            #el primer faro
-            if lhs[tr[0][0]]["owner"] == self.player_num:
-                if lhs[tr[0][0]]["have_key"]:
-                    cnd = cnd + [tr[0][0],1]]
-                else:
-                    cnd = cnd + [tr[0][0],0]]
-            else:
-                otros = otros + [tr[0][0]]
+                f_d = pos
+        # si no se puede nada por 
+        t_obj = utils.objetive(f_d,[],0)
 
-            if lhs[tr[0][1]]["owner"] == self.player_num:
-                if lhs[tr[0][1]]["have_key"]:
-                    cnd = cnd + [tr[0][1],1]
-                else:
-                    cnd = cnd + [tr[0][1],0]]
-            else:
-                otros = otros + [tr[0][1]]
-
-            if lhs[tr[0][2]]["owner"] == self.player_num:
-                if lsh[tr[0][2]]["have_key"]:
-                    cnd = cnd + [tr[0][2],1]]
-                else:
-                    cnd = cnd + [tr[0][2],0]]
-            else:
-                otros = otros + [tr[0][2]]
-            #mirar cuantos
-            if len(cnd) == 0:
-                #controlo 0
-                td1 = self.light_dist[tr[0][0]][cy][cx]
-                td2 = self.light_dist[tr[0][1]][cy][cx]
-                td3 = self.light_dist[tr[0][2]][cy][cx]
-                if td1 < td2 and td1 < td3:
-                    t1 = td1 + tr[3]
-                    nxt = tr[0][0]
-                elif td2 < td3:
-                    t1 = td2 + tr[3]
-                    nxt = tr[0][1]
-                else:
-                    t1 = td3 + tr[3]
-                    nxt = tr[0][2]
-                #check
-                if to == -1:
-                    #comprobar si hay cruces
-                    if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                        continue
-                    self.o2 = [tr,t1,0,nxt,-1]
-                    to = 0
-                else:
-                    if self.check_tri(t1,tr):
-                        #comprobar si hay cruces
-                        if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                            continue
-                        self.o2 = [tr,t1,0,nxt,-1]
-            elif len(cnd) == 1:
-                #controlo 1
-                if cnd[0][1] == 1:
-                    #tengo llave
-                    n_cnd = cnd[0][0]
-                    tdo1 = self.light_dist[otros[0]][cy][cx]
-                    tdo2 = self.light_dist[otros[1]][cy][cx]
-                    dotros = self.light_dist[otros[1]][otros[0][1]][otros[0][0]]
-                    dc1 = self.light_dist[cnd[0][0]][otros[0][1]][otros[0][0]]
-                    dc2 = self.light_dist[cnd[0][0]][otros[1][1]][otros[1][1]]
-	
-                    dt1 = tdo1 + dotros + dc1
-                    dt2 = tdo2 + dotros + dc2
-                    if dt1 < dt2:
-                        nxt = otros[0]
-                        t1 = dt1
-                    else:		
-                        nxt = otros[1]
-                        t1 = dt2
-                    #check
-                    if to == -1:
-                        #comprobar si hay cruces
-                        if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                            continue
-                        self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-                        to = 0
+        # recorrer los triangulos
+        for tr in self.tri:
+            cnd = [] # los propios, con llave o si llave
+            otros = [] # el resto
+            for clh in tr.get_lighthouses():
+                if lhs[clh]["owner"] == self.player_num:
+                    if lhs[clh]["have_key"]:
+                        cnd = cnd + [[clh,1]]
                     else:
-                        if self.check_tri(t1,self.tri[tr][2],tr):
-                            #comprobar si hay cruces
-                            if self.check_croses(lhs,tr[0][0],tr[0][1]) or self.check_croses(lhs,tr[0][1],tr[0][2]) or self.check_croses(lhs,tr[0][2],tr[0][0]):
-                                continue
-                            self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-    
+                        cnd = cnd + [[clh,0]]
                 else:
-                    #no tengo llave, como sin controlar
-                    td1 = self.light_dist[self.tri[tr][0][0]][cy][cx]
-				td2 = self.light_dist[self.tri[tr][0][1]][cy][cx]
-				td3 = self.light_dist[self.tri[tr][0][2]][cy][cx]
-				if td1 < td2 and td1 < td3:
-					t1 = td1 + self.tri[tr][3]
-					nxt = self.tri[tr][0][0]
-				elif td2 < td3:
-					t1 = td2 + self.tri[tr][3]
-					nxt = self.tri[tr][0][1]
-				else:
-					t1 = td3 + self.tri[tr][3]
-					nxt = self.tri[tr][0][2]
-				#check
-				if to == -1:
-					#comprobar si hay cruces
-					if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-						continue
-					self.o2 = [tr,self.tri[tr][2],t1,0,nxt,-1]
-					to = 0
-				else:
-					if self.check_tri(t1,self.tri[tr][2],tr):
-						#comprobar si hay cruces
-						if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-							continue
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,-1]		
+                    otros = otros + [clh]
 
-		elif len(cnd) == 2:
-			#controlo 2
-			cordc1 = self.get_cord(cnd[0][0])
-			cordc2 = self.get_cord(cnd[1][0])
-			if [cordc2[0],cordc2[1]] in lhs[(cordc1[0],cordc1[1])]["connections"]:
-				#estan conectados
-				if cnd[0][1] == 1 and cnd[1][1] == 1:
-					#tenemos las 2 llaves
-					to1 = self.light_dist[otros[0]][cordc1[1]][cordc1[0]]
-					to2 = self.light_dist[otros[0]][cordc2[1]][cordc2[0]]
-					dt = self.light_dist[otros[0]][cy][cx]
-					#haremos la conexión más lejana
-					nxt = otros[0]
-					if to1 < to2:
-						#unimos con el 2 y vamos luego al 1
-						n_cnd = cnd[1][0]
-						t1 = to1 + dt
-					else:
-						#unicos con el 1 y vamos luego al 2
-						n_cnd = cnd[0][0]
-						t1 = to2 + dt
-				
-				elif cnd[0][1] == 1:
-					#solo la llave del primero
-					to = self.light_dist[otros[0]][cordc2[1]][cordc2[0]]
-					dt = self.light_dist[otros[0]][cy][cx]
-					nxt = otros[0]
-					n_cnd = cnd[0][0]
-					t1 = to + nxt
-				elif cnd[1][1] == 1:
-					#solo la llave del segundo
-					to = self.light_dist[otros[0]][cordc1[1]][cordc1[0]]
-					dt = self.light_dist[otros[0]][cy][cx]
-					nxt = otros[0]
-					n_cnd = cnd[1][0]
-					t1 = to + nxt
-				else:
-					#ninguna llave
-					to1 = self.light_dist[cnd[0][0]][cy][cx]
-					to2 = self.light_dist[cnd[1][0]][cy][cx]
-					dt = self.light_dist[otros[0]][cordc1[1]][cordc1[0]]+self.light_dist[otros[0]][cordc2[1]][cordc2[0]]
-					if to1 < to2:
-						nxt = cnd[0][0]
-						n_cnd = -1
-						t1 = to1 + dt
-					else:
-						nxt = cnd[1][0]
-						n_cnd = -1
-						t1 = to2 + dt
-				#check
-				if to == -1:
-					#comprobar si hay cruces
-					if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-						continue
-					self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-					to = 0
-				else:
-					if self.check_tri(t1,self.tri[tr][2],tr):
-						#comprobar si hay cruces
-						if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-							continue
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-			else:
-				#no están conectados
-				if cnd[0][1] == 1 and cnd[1][1] == 1:
-					#tenemos las 2 llaves
-					tl1 = self.light_dist[otros[0]][cordc1[1]][cordc1[0]]
-					tl2 = self.light_dist[otros[0]][cordc2[1]][cordc2[0]]
-					dtc = self.light_dist[cnd[0][0]][cordc2[1]][cordc2[0]]
-					tc1 = self.light_dist[cnd[0][0]][cy][cx]
-					tc2 = self.light_dist[cnd[1][0]][cy][cx]
-					tl = self.light_dist[otros[0]][cy][cx]
+            # self.log("cnd: %s",str(cnd))
+            # self.log("otros: %s",str(otros))
+            if len(cnd) == 0:
+                # controlo 0
+                df0 = self.light_dict[otros[0]].get_dist((cx,cy))
+                df1 = self.light_dict[otros[1]].get_dist((cx,cy))
+                df2 = self.light_dict[otros[2]].get_dist((cx,cy))
+                d01 = self.light_dict[otros[0]].get_dist(otros[1])
+                d12 = self.light_dict[otros[1]].get_dist(otros[2])
+                d20 = self.light_dict[otros[2]].get_dist(otros[0])
+                dt0p = df0 + tr.get_perimeter() + 6
+                dt01 = df0 + (2*d01) + d20 + 7
+                dt02 = df0 + (2*d20) + d01 + 7
+                d0 = min(dt0p,dt01,dt02)
+                dt1p = df1 + tr.get_perimeter() + 6
+                dt10 = df1 + (2*d01) + d12 + 7
+                dt12 = df1 + (2*d12) + d01 + 7
+                d1 = min(dt1p,dt10,dt12)
+                dt2p = df2 + tr.get_perimeter() + 6
+                dt20 = df2 + (2*d20) + d12 + 7
+                dt21 = df2 + (2*d12) + d20 + 7
+                d2 = min(dt2p,dt20,dt21)
+                n_turn = min(d0,d1,d2)
+                n_connect = []
+                if n_turn != d1 and n_turn != d2:
+                    n_next = otros[0]
+                elif n_turn != d0 and n_turn != d2:
+                    n_next = otros[1]
+                elif n_turn != d0 and n_turn != d1:
+                    n_next = otros[2]
+                elif n_turn != d0:
+                    if lhs[otros[1]]["energy"] <= lhs[otros[2]]["energy"]:
+                        n_next = otros[1]
+                    else:
+                        n_next = otros[2]
+                elif n_turn != d1:
+                    if lhs[otros[0]]["energy"] <= lhs[otros[2]]["energy"]:
+                        n_next = otros[0]
+                    else:
+                        n_next = otros[2]
+                elif n_turn != d2:
+                    if lhs[otros[0]]["energy"] <= lhs[otros[1]]["energy"]:
+                        n_next = otros[0]
+                    else:
+                        n_next = otros[1]
+                else:
+                    # todos = min
+                    e0 = lhs[otros[0]]["energy"]
+                    e1 = lhs[otros[1]]["energy"]
+                    e2 = lhs[otros[2]]["energy"]
+                    if e0 <= e1 and e0 <= e2:
+                        n_next = otros[0]
+                    elif e1 <= e2:
+                        n_next = otros[1]
+                    else:
+                        n_next = otros[2]
+            elif len(cnd) == 1:
+                # controlo 1
+                if cnd[0][1] == 1:
+                    # tengo llave
+                    df0 = self.light_dict[otros[0]].get_dist((cx,cy))
+                    df1 = self.light_dict[otros[1]].get_dist((cx,cy))
+                    dotros = self.light_dict[otros[0]].get_dist(otros[1])
+                    dc0 = self.light_dict[otros[0]].get_dist(cnd[0][0])
+                    dc1 = self.light_dict[otros[1]].get_dist(cnd[0][0])
+                    dt0c = df0 + dc0 + dc1 + 6
+                    dt0o = df0 + dotros + dc1 + 5
+                    dt0 = min(dt0c,dt0o)
+                    dt1c = df1 + dc1 + dc0 + 6
+                    dt1o = df1 + dotros + dc0 + 5
+                    dt1 = min(dt1c,dt1o)
+                    n_connect = cnd[0][0]
+                    if dt0 < dt1:
+                        n_next = otros[0]
+                        n_turn = dt0
+                    elif dt1 < dt0:
+                        n_next = otros[1]
+                        n_turn = dt1
+                    else:
+                        n_turn = dt0
+                        if lhs[otros[0]]["energy"] <= lhs[otros[1]]["energy"]:
+                            n_next = otros[0]
+                        else:
+                            n_next = otros[1]
+                else:
+                    # no tengo llave, como 0
+                    df0 = self.light_dict[otros[0]].get_dist((cx,cy))
+                    df1 = self.light_dict[otros[1]].get_dist((cx,cy))
+                    df2 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                    d01 = self.light_dict[otros[0]].get_dist(otros[1])
+                    d12 = self.light_dict[otros[1]].get_dist(cnd[0][0])
+                    d20 = self.light_dict[cnd[0][0]].get_dist(otros[0])
+                    dt0p = df0 + tr.get_perimeter() + 6
+                    dt01 = df0 + (2*d01) + d20 + 7
+                    dt02 = df0 + (2*d20) + d01 + 7
+                    d0 = min(dt0p,dt01,dt02)
+                    dt1p = df1 + tr.get_perimeter() + 6
+                    dt10 = df1 + (2*d01) + d12 + 7
+                    dt12 = df1 + (2*d12) + d01 + 7
+                    d1 = min(dt1p,dt10,dt12)
+                    dt2p = df2 + tr.get_perimeter() + 6
+                    dt20 = df2 + (2*d20) + d12 + 7
+                    dt21 = df2 + (2*d12) + d20 + 7
+                    d2 = min(dt2p,dt20,dt21)
+                    n_turn = min(d0,d1,d2)
+                    n_connect = []
+                    if n_turn != d1 and n_turn != d2:
+                        n_next = otros[0]
+                    elif n_turn != d0 and n_turn != d2:
+                        n_next = otros[1]
+                    elif n_turn != d0 and n_turn != d1:
+                        n_next = cnd[0][0]
+                    elif n_turn != d0:
+                        # priorizar el que no tenemos
+                        n_next = otros[1]
+                    elif n_turn != d1:
+                        # priorizar el que no tenemos
+                        n_next = otros[0]
+                    else:
+                        # empate entr otros o los 3 energia priorizando los que no tenemos
+                        if lhs[otros[0]]["energy"] <= lhs[otros[1]]["energy"]:
+                            n_next = otros[0]
+                        else:
+                            n_next = otros[1]
+            elif len(cnd) == 2:
+                # controlo 2
+                if [cnd[0][0][0],cnd[0][0][1]] in lhs[cnd[1][0]]["connections"]:
+                    # están conectados
+                    if cnd[0][1] == 1 and cnd[1][1] == 1:
+                        # tenemos las dos llaves
+                        to0 = self.light_dict[otros[0]].get_dist(cnd[0][0])
+                        to1 = self.light_dict[otros[0]].get_dist(cnd[1][0])
+                        n_next = otros[0]
+                        n_turn = self.light_dict[otros[0]].get_dist((cx,cy)) + 3
+                        # primero la conexión más larga
+                        if to0 < to1:
+                            n_connect = cnd[1][0]
+                        elif to1 < to0:
+                            n_connect = cnd[0][0]
+                        else: 
+                            #  son iguales conectar al de menor energia primero
+                            if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                n_connect = cnd[0][0]
+                            else:
+                                n_connect = cnd[1][0]
+                    elif cnd[0][1] == 1:
+                        # solo la llave del 0
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d12 = self.light_dict[cnd[1][0]].get_dist(otros[0])
+                        dt1 = df1 + d12 + 4
+                        dt2 = df2 + d12 + 4
+                        if dt1 < dt2:
+                            n_turn = dt1
+                            n_next = cnd[1][0]
+                            n_connect = []
+                        else:
+                            # en caso de igualdad priorizar el que no tenemos
+                            n_next = otros[0]
+                            n_connect = cnd[0][0]
+                            n_turn = dt2
+                    elif cnd[1][1] == 1:
+                        # solo la lalve del 1
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d02 = self.light_dict[cnd[0][0]].get_dist(otros[0])
+                        dt0 = df0 + d02 + 4
+                        dt2 = df2 + d02 + 4
+                        if dt0 < dt2:
+                            n_turn = dt0
+                            n_next = cnd[0][0]
+                            n_connect = []
+                        else:
+                            # en caso de igualda priorizar el que no tenemos
+                            n_next = otros[0]
+                            n_connect = cnd[1][0]
+                            n_turn = dt2
+                    else:
+                        # no tiene la llave de ninguno
+                        n_connect = []
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d01 = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        d12 = self.light_dict[cnd[1][0]].get_dist(otros[0])
+                        d20 = self.light_dict[otros[0]].get_dist(cnd[0][0])
+                        dt01 = df0 + d01 + d12 + 5
+                        dt02 = df0 + d20 + d12 + 5
+                        d0 = min(dt01,dt02)
+                        dt10 = df1 + d01 + d20 + 5
+                        dt12 = df1 + d12 + d20 + 5
+                        d1 = min(dt12,dt10)
+                        dt2021 = df2 + d20 + d20 + d12 + 6
+                        dt2012 = df2 + d20 + d01 + d12 + 6
+                        dt2120 = df2 + d12 + d12 + d20 + 6
+                        dt2102 = df2 + d12 + d01 + d20 + 6
+                        d2 = min(dt2021,dt2012,dt2120,dt2102)
+                        n_turn = min(d0,d1,d2)
+                        if n_turn != d0 and n_turn != d1:
+                            n_next = otros[0]
+                        elif n_turn != d0 and n_turn != d2:
+                            n_next = cnd[1][0]
+                        elif n_turn != d1 and n_turn != d2:
+                            n_next = cnd[0][0]
+                        elif n_turn != d2:
+                            # empate 0 y 1
+                            if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                n_next = cnd[0][0]
+                            else:
+                                n_next = cnd[1][0]
+                        else:
+                            # empates con 2 o triples. priorizar el que no tenemos
+                            n_next = otros[0]
+                else:
+                    # no están conectados
+                    if cnd[0][1] == 1 and cnd[1][0] == 1:
+                    #ambas llaves
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d01 = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        d12 = self.light_dict[cnd[1][0]].get_dist(otros[0])
+                        d20 = self.light_dict[otros[0]].get_dist(cnd[0][0])
+                        dt02 = df0 + d20 + d12 + 6
+                        dt01 = df0 + d01 + d12 + 6
+                        d0 = min(dt02,dt01)
+                        dt10 = df1 + d01 + d20 + 6
+                        dt12 = df1 + d12 + d20 + 6
+                        d1 = min(dt10,dt12)
+                        dt20 = df2 + d20 + d10 + 6
+                        dt21 = df2 + d12 + d10 + 6
+                        d2 = min(dt20,dt21)
+                        n_turn = min(d0,d1,d2)
+                        if n_turn != d0 and n_turn != d1:
+                            n_next = otros[0]
+                            if d12 < d20:
+                                n_connect = cnd[0][0]
+                            else:
+                                n_connect = cnd[1][0]
+                        elif n_turn != d0 and n_turn != d2:
+                            n_next = cnd[1][0]
+                            n_connect = cnd[0][0]
+                        elif n_turn != d1 and n_turn != d2:
+                            n_next = cnd[0][0]
+                            n_connect = cnd[1][0]
+                        elif n_turn != d2:
+                            # empate entre 1 y 0 a por el de menor energia
+                            if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                n_next = cnd[0][0]
+                                n_connect = cnd[1][0]
+                            else:
+                                n_next = cnd[1][0]
+                                n_connect = cnd[0][0]
+                        else:
+                            # empates con 2 o triple priorizar el que no tenemos
+                            n_next = otros[0]
+                            if d12 < d20:
+                                n_connect = cnd[0][0]
+                            else:
+                                n_connect = cnd[1][0]
+                    elif cnd[0][1] == 1:
+                        # solo la llave del 0
+                        n_connect = cnd[0][0]
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d12 = self.light_dict[otros[0]].get_dist(cnd[1][0])
+                        d20 = self.light_dict[cnd[0][0]].get_dist(otros[0])
+                        d01 = self.light_dict[cnd[1][0]].get_dist(cnd[0][0])
+                        dt10 = df1 + d01 + d20 + 6
+                        dt12 = df1 + d12 + d20 + 6
+                        d1 = min(dt10,dt12)
+                        dt20 = df2 + d20 + d01 + 6
+                        dt21 = df2 + d12 + d01 + 6
+                        d2 = min(dt20,dt21)
+                        if d1 < d2:
+                            n_turn = d1
+                            n_next = cnd[1][0]
+                        else:
+                            # en caso de empate se prioriza el libre
+                            n_next = otros[0]
+                            n_turn = d2
+                    elif cnd[1][1] == 1:
+                        # solo la llave del 1
+                        n_connect = cnd[1][0]
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d12 = self.light_dict[otros[0]].get_dist(cnd[1][0])
+                        d20 = self.light_dict[cnd[0][0]].get_dist(otros[0])
+                        d01 = self.light_dict[cnd[1][0]].get_dist(cnd[0][0])
+                        dt01 = df0 + d01 + d12 + 6
+                        dt02 = df0 + d20 + d12 + 6
+                        d0 = min (dt01,dt02)
+                        dt20 = df2 + d20 + d01 + 6
+                        dt21 = df2 + d12 + d01 + 6
+                        d2 = min(dt20,dt21)
+                        if d0 < d2:
+                            n_turn = d0
+                            n_next = cnd[0][0]
+                        else:
+                            # en caso de empate se prioriza el libre
+                            n_next = otros[0]
+                            n_turn = d2
+                    else:
+                        # ninguna llave como si 0
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[otros[0]].get_dist((cx,cy))
+                        d01 = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        d12 = self.light_dict[cnd[1][0]].get_dist(otros[0])
+                        d20 = self.light_dict[otros[0]].get_dist(cnd[0][0])
+                        dt0p = df0 + tr.get_perimeter() + 6
+                        dt0c1 = df0 + (2*d01) + d20 + 7
+                        dt0c2 = df0 + (2*d20) + d01 + 7
+                        d0 = min(dt0p,dt0c1,dt0c2)
+                        dt1p = df1 + tr.get_perimeter() + 6
+                        dt1c0 = df1 + (2*d01) + d12 + 7
+                        dt1c2 = df1 + (2*d12) + d01 + 7
+                        d1 = min(dt1p,dt1c0,dt1c2)
+                        dt2p = df2 + tr.get_perimeter() + 6
+                        dt2c0 = df2 + (2*d20) + d12 + 7
+                        dt2c1 = df2 + (2*d12) + d20 + 7
+                        d2 = min(dt2p,dt2c0,dt2c1)
+                        n_turn = min(d0,d1,d2)
+                        n_connect = []
+                        if n_turn != d0 and n_turn != d1:
+                            n_next = otros[0]
+                        elif n_turn != d0 and n_turn != d2:
+                            n_next = cnd[1][0]
+                        elif n_turn != d1 and n_turn != d2:
+                            n_next = cnd[0][0]
+                        elif n_turn != d2:
+                            # empate 0 y 1 a por el de menor energia
+                            if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                n_next = cnd[0][0]
+                            else:
+                                n_next = cnd[1][0]
+                        else:
+                            # empate triple o con el 2. priorizar el suelto
+                            n_next = otros[0]
+            else:
+                # controlo 3
+                cord0 = [cnd[0][0][0],cnd[0][0][1]]
+                cord1 = [cnd[1][0][0],cnd[1][0][1]]
+                cord2 = [cnd[2][0][0],cnd[2][0][1]]
+                # self.log("con0: %s", str(lhs[cnd[0][0]]["connections"]))
+                # self.log("con1: %s", str(lhs[cnd[1][0]]["connections"]))
+                # self.log("con2: %s", str(lhs[cnd[2][0]]["connections"]))
+                if not(cord0 in lhs[cnd[1][0]]["connections"] and cord1 in lhs[cnd[2][0]]["connections"] and cord2 in lhs[cnd[0][0]]["connections"]):
+                    # falta alguna conexion
+                    if cord0 in lhs[cnd[2][0]]["connections"] and cord1 in lhs[cnd[2][0]]["connections"]:
+                        # Falta la 0-1
+                        d0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        d1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        dt = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        if cnd[0][1] == 1 and cnd[1][1] == 1:
+                            # tenemos la llave de las dos
+                            if d0 < d1:
+                                n_next = cnd[0][0]
+                                n_turn = d0 + 2
+                                n_connect = cnd[1][0]
+                            elif d1 < d0:
+                                n_next = cnd[1][0]
+                                n_turn = d1 + 2
+                                n_connect = cnd[0][0]
+                            else:
+                                # iguales atacar al de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_turn = d0 + 2
+                                    n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[1][0]
+                                    n_turn = d1 + 2
+                                    n_connect = cnd[0][0]
+                        elif cnd[0][1] == 1:
+                            # solo tenemos la llave del 0
+                            n_next = cnd[1][0]
+                            n_turn = d1 + 2
+                            n_connect = cnd[0][0]
+                        elif cnd[1][1] == 1:
+                            # solo tenemos la llave del 1
+                            n_next = cnd[0][0]
+                            n_turn = d0 + 2
+                            n_connect = cnd[1][0]
+                        else:
+                            # ninguna llave
+                            n_connect = []
+                            if d0 < d1:
+                                n_next = cnd[0][0]
+                                n_turn = d0 + dt + 3
+                            elif d1 < d0:
+                                n_next = cnd[1][0]
+                                n_turn = d1 + dt + 3
+                            else:
+                                # iguales atacar al de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_turn = d0 + dt + 3
+                                else:
+                                    n_next = cnd[1][0]
+                                    n_turn = d1 + dt + 3
+                    elif cord1 in lhs[cnd[0][0]]["connections"] and cord2 in lhs[cnd[0][0]]["connections"]:
+                        # Falta la 1-2
+                        d1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        d2 = self.light_dict[cnd[2][0]].get_dist((cx,cy))
+                        dt = self.light_dict[cnd[1][0]].get_dist(cnd[2][0])
+                        if cnd[1][1] ==1 and cnd[2][1] == 1:
+                            # tenemos ambas llaves
+                            if d1 < d2:
+                                n_next = cnd[1][0]
+                                n_turn = d1 + 2
+                                n_connect = cnd[2][0]
+                            elif d2 < d1:
+                                n_next = cnd[2][0]
+                                n_turn = d2 + 2
+                                n_connect = cnd[1][0]
+                            else:
+                                # iguales atacar al de menor energia
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    n_turn = d1 + 2
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_turn = d2 + 2
+                                    n_connect = cnd[1][0]
+                        elif cnd[1][1] == 1:
+                            # solo la llave del 1
+                            n_next = cnd[2][0]
+                            n_turn = d2 + 2
+                            n_connect = cnd[1][0]
+                        elif cnd[2][1] == 1:
+                            # solo la llave del 2
+                            n_next = cnd[1][0]
+                            n_turn = d1 + 2
+                            n_connect = cnd[2][0]
+                        else:
+                            # ninguna llave
+                            n_connect = []
+                            if d1 < d2:
+                                n_next = cnd[1][0]
+                                n_turn = d1 + dt + 3
+                            elif d2 < d1:
+                                n_next = cnd[2][0]
+                                n_turn = d2 + dt + 3
+                            else:
+                                # iguales atacar al de menor energia
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    n_turn = d1 + dt + 3
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_turn = d2 + dt + 3
+                    elif cord0 in lhs[cnd[1][0]]["connections"] and cord2 in lhs[cnd[1][0]]["connections"]:
+                        # Falta la 0-2
+                        d0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        d2 = self.light_dict[cnd[2][0]].get_dist((cx,cy))
+                        dt = self.light_dict[cnd[0][0]].get_dist(cnd[2][0])
+                        if cnd[0][1] == 1 and cnd[2][1] == 1:
+                            # ambas llaves
+                            if d0 < d2:
+                                n_next = cnd[0][0]
+                                n_turn = d0 + 2
+                                n_connect = cnd[2][0]
+                            elif d2 < d0:
+                                n_next = cnd[2][0]
+                                n_turn = d2 + 2
+                                n_connect = cnd[0][0]
+                            else:
+                                # iguales atacar al de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_turn = d0 + 2
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_turn = d2 + 2
+                                    n_connect = cnd[0][0]
+                        elif cnd[0][1] == 1:
+                            # solo la llave de 0
+                            n_next = cnd[2][0]
+                            n_turn = d2 + 2
+                            n_connect = cnd[0][0]
+                        elif cnd[2][1] == 1:
+                            # solo la llave dle 2
+                            n_next = cnd[0][0]
+                            n_turn = d0 + 2
+                            n_connect = cnd[2][0]
+                        else:
+                            # ninguna llave
+                            n_connect = []
+                            if d0 < d2:
+                                n_next = cnd[0][0]
+                                n_turn = d0 + dt + 3
+                            elif d2 < d0:
+                                n_next = cnd[2][0]
+                                n_turn = d2 + dt + 3
+                            else:
+                                # igual atacar al de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_turn = d0 + dt + 3
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_turn = d2 + dt + 3
+                    elif cord0 in lhs[cnd[2][0]]["connections"]:
+                        # Faltan 0-1 y 1-2
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[cnd[2][0]].get_dist((cx,cy))
+                        d10 = self.light_dict[cnd[1][0]].get_dist(cnd[0][0])
+                        d12 = self.light_dict[cnd[1][0]].get_dist(cnd[2][0])
+                        dfc = self.light_dict[cnd[0][0]].get_dist(cnd[2][0])
+                        if cnd[0][1] == 1 and cnd[2][1] == 1:
+                            # tenemos las dos llaves
+                            n_next = cnd[1][0]
+                            n_turn = df1 + 3
+                            # conectamos primero el mas largo
+                            if d10 < d12:
+                                n_connect = cnd[2][0]
+                            elif d12 < d10:
+                                n_connect = cnd[0][0]
+                            else:
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_connect = cnd[2][0]
+                        elif cnd[0][1] == 1:
+                            # solo la llave del 0
+                            d1 = df1 + d12 + 4
+                            d2 = df2 + d12 + 4
+                            if d1 <= d2:
+                                # priorizamos conexión rápida en empate
+                                n_turn = d1
+                                n_next = cnd[1][0]
+                                n_connect = cnd[0][0]
+                            elif d2 < d1:
+                                n_turn = d2
+                                n_next = cnd[2][0]
+                                n_connect = []
+                        elif cnd[2][1] == 1:
+                            # solo la llave del 2
+                            d1 = df1 + d10 + 4
+                            d0 = df0 + d10 + 4
+                            if d1 <= d0:
+                                # priorizamos conexión rápida en empate
+                                n_turn = d1
+                                n_next = cnd[1][0]
+                                n_connect = cnd[2][0]
+                            else:
+                                n_turn = d0
+                                n_next = cnd[0][0]
+                                n_connect = []
+                        else:
+                            # ninguna llave de los dos
+                            if cnd[1][1] == 1:
+                                # llave del 1 si
+                                d021 = df0 + dfc + d12 + 5
+                                d012 = df0 + d10 + d12 + 5
+                                d201 = df2 + dfc + d10 + 5
+                                d210 = df2 + d12 + d10 + 5
+                                n_turn = min(d021,d012,d201,d210)
+                                n_connect = cnd[1][0]
+                                if n_turn != d021 and n_turn != d012:
+                                    # uno de conexión al 2
+                                    n_next = cnd[2][0]
+                                elif n_turn != d201 and n_turn != d210:
+                                    # uno de conexión al 0
+                                    n_next = cnd[0][0]
+                                else:
+                                    # hay igualdades. atacar al de menro energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                            else:
+                                # no hay llave del 1 como sin llave
+                                n_connect = []
+                                d21 = df2 + d12 + d10 + 5
+                                d20 = df2 + dfc + d10 + 5
+                                d2 = min(d21,d20)
+                                d01 = df0 + d10 + d12 + 5
+                                d02 = df0 + dfc + d12 + 5
+                                d0 = min(d01,d02)
+                                d1021 = df1 + d10 + dfc + d12 + 6
+                                d1012 = df1 + d10 + d10 + d12 + 6
+                                d1201 = df1 + d12 + dfc + d10 + 6
+                                d1210 = df1 + d12 + d12 + d10 + 6
+                                d1 = min(d1021,d1012,d1201,d1210)
+                                n_turn = min(d0,d1,d2)
+                                if n_turn != d2 and n_turn != d0:
+                                    # alguno de siguiente 1
+                                    n_next = cnd[1][0]
+                                elif n_turn != d2 and n_turn != d1:
+                                    # a por el 0
+                                    n_next = cnd[0][0]
+                                elif n_turn != d0 and n_turn != d1:
+                                    # a por el 2
+                                    n_next = cnd[2][0]
+                                elif n_turn != d1:
+                                    # empate entre 2 y 0 a por el de menor energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                                elif n_turn != d0:
+                                    # empate entre 2 y 1 a por el de menor energia
+                                    if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[1][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                                elif n_turn != d2:
+                                    # empate entre 0 y 1 a por el de menor energia
+                                    if lhs[cnd[1][0]]["energy"] <= lhs[cnd[0][0]]["energy"]:
+                                        n_next = cnd[1][0]
+                                    else:
+                                        n_next = cnd[0][0]
+                                else:
+                                    # triple empate a por el de menor energia
+                                    if lhs[cnd[1][0]]["energy"] <= lhs[cnd[0][0]]["energy"] and lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[1][0]
+                                    elif lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                    elif cord0 in lhs[cnd[1][0]]["connections"]:
+                        # Faltan 1-2 y 0-2
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[cnd[2][0]].get_dist((cx,cy))
+                        d20 = self.light_dict[cnd[2][0]].get_dist(cnd[0][0])
+                        d21 = self.light_dict[cnd[2][0]].get_dist(cnd[1][0])
+                        dfc = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        if cnd[0][1] == 1 and cnd[1][1] == 1:
+                            # ambas llaves
+                            n_next = cnd[2][0]
+                            n_turn = df2 + 3
+                            # conectar primero la más lejana
+                            if d20 < d21:                               
+                                n_connect = cnd[1][0]
+                            elif d21 < d20:
+                                n_connect = cnd[0][0]
+                            else:
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_connect = cnd[1][0]
+                        elif cnd[0][1] == 1:
+                            # llave del 0
+                            d1 = df1 + d21 + 4
+                            d2 = df2 + d21 + 4
+                            if d1 < d2:
+                                n_turn = d1
+                                n_connect = []
+                                n_next = cnd[1][0]
+                            else:
+                                # priorizar la primera conexion rapida
+                                n_turn = d2
+                                n_connect = cnd[0][0]
+                                n_next = cnd[2][0]
+                        elif cnd[1][1] == 1:
+                            # llave del 1
+                            d0 = df0 + d20 + 4
+                            d2 = df2 + d20 + 4
+                            if d0 < d2:
+                                n_turn = d0
+                                n_connect = []
+                                n_next = cnd[0][0]
+                            else:
+                                # prioriza la primera conexion rapida
+                                n_turn = d2
+                                n_connect = cnd[1][0]
+                                n_next = cnd[2][0]
+                        else:
+                            # ninguna llave de las dos
+                            if cnd[2][1] == 1:
+                                # llave del 2 si
+                                d012 = df0 + dfc + d21 + 5
+                                d021 = df0 + d20 + d21 + 5 
+                                d102 = df1 + dfc + d20 + 5
+                                d120 = df1 + d21 + d20 + 5
+                                n_turn = min(d012,d021,d102,d120)
+                                n_connect = cnd[2][0]
+                                if n_turn != d012 and n_turn != d021:
+                                    # uno de conexion al 1
+                                    n_next = cnd[1][0]
+                                elif n_turn != d102 and n_turn != d120:
+                                    # uno de conexion al 0
+                                    n_next = cnd[0][0]
+                                else:
+                                    # hay igualdades. atacar al de menor energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[1][0]
+                            else:
+                                # no tengo ninguna llave
+                                n_connect = []
+                                d02 = df0 + d20 + d21 + 5
+                                d01 = df0 + dfc + d21 + 5
+                                d0 = min(d02,d01)
+                                d12 = df1 + d21 + d20 + 5
+                                d10 = df1 + dfc + d20 + 5
+                                d1 = min(d12,d10)
+                                d2012 = df2 + d20 + dfc + d21 + 6
+                                d2021 = df2 + d20 + d20 + d21 + 6
+                                d2102 = df2 + d21 + dfc + d20 + 6
+                                d2120 = df2 + d21 + d21 + d20 + 6
+                                d2 = min(d2012,d2021,d2102,d2120)
+                                n_turn = min(d0,d1,d2)
+                                if n_turn != d0 and n_turn != d1:
+                                    # alguno del siguiente 2
+                                    n_next = cnd[2][0]
+                                elif n_turn != d0 and n_turn != d2:
+                                    # siguiente 1
+                                    n_next = cnd[1][0]
+                                elif n_turn != d1 and n_turn != d2:
+                                    # siguente 0
+                                    n_next = cnd[0][0]
+                                elif n_turn != d0:
+                                    # empate 2 y 1 a por el de menor energia
+                                    if lhs[cnd[2][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                        n_next = cnd[2][0]
+                                    else:
+                                        n_next = cnd[1][0]
+                                elif n_turn != d1:
+                                    # empate 0 y 2 a por el de menor energia
+                                    if lhs[cnd[2][0]]["energy"] <= lhs[cnd[0][0]]["energy"]:
+                                        n_next = cnd[2][0]
+                                    else:
+                                        n_next = cnd[0][0]
+                                elif n_turn != d2:
+                                    # empate 0 y 1 a por el de menor energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[1][0]
+                                else:
+                                    # tripe empate a por el de menor energia
+                                    if lhs[cnd[2][0]]["energy"] <= lhs[cnd[0][0]]["energy"] and lhs[cnd[2][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                        n_next = cnd[2][0]
+                                    elif lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[1][0]
+                    elif cord1 in lhs[cnd[2][0]]["connections"]:
+                        # Faltan 0-1 y 0-2
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[cnd[2][0]].get_dist((cx,cy))
+                        d01 = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        d02 = self.light_dict[cnd[0][0]].get_dist(cnd[2][0])
+                        dfc = self.light_dict[cnd[1][0]].get_dist(cnd[2][0])
+                        if cnd[1][1] == 1 and cnd[2][1] == 1:
+                            # tenemos las dos llaves
+                            n_next = cnd[0][0]
+                            n_turn = df0 + 3
+                            # primero la conexion mas larga
+                            if d01 < d02:
+                                n_connect = cnd[2][0]
+                            elif d02 < d01:
+                                n_connect = cnd[1][0]
+                            else:
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_connect = cnd[1][0]
+                                else:
+                                    n_connect = cnd[2][0]
+                        elif cnd[1][1] == 1:
+                            # solo la llave del 1
+                            d0 = df0 + d02 + 4
+                            d2 = df2 + d02 + 4
+                            if d0 <= d2:
+                                # priorizar la conexion rapida
+                                n_next = cnd[0][0]
+                                n_turn = d0
+                                n_connect = cnd[1][0]
+                            else:
+                                n_next = cnd[2][0]
+                                n_turn = d2
+                                n_connect = []
+                        elif cnd[2][1] == 1:
+                            # solo la llave del 2
+                            d0 = df0 + d01 + 4
+                            d1 = df1 + d01 + 4
+                            if d0 <= d1:
+                                # priorizar la conexion rapida
+                                n_next = cnd[0][0]
+                                n_turn = d0
+                                n_connect = cnd[2][0]
+                            else:
+                                n_next = cnd[1][0]
+                                n_turn = d1
+                                n_connect = []
+                        else:
+                            # ninguna de las dos llaves
+                            if cnd[0][1] == 1:
+                                # tenemos llave del 0
+                                d102 = df1 + d01 + d02 + 5
+                                d120 = df1 + dfc + d02 + 5
+                                d201 = df2 + d02 + d01 + 5
+                                d210 = df2 + dfc + d01 + 5
+                                n_turn = min(d102,d120,d201,d210)
+                                n_connect = cnd[0][0]
+                                if n_turn != d102 and n_turn != d120:
+                                    # alguno de los del 2
+                                    n_next = cnd[2][0]
+                                elif n_turn != d201 and n_turn != d210:
+                                    # alguno de lso del 1
+                                    n_next = cnd[1][0]
+                                else:
+                                    # hay igualdades. atacar al de menor energia
+                                    if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[1][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                            else:
+                                # no tenemos ninguna lalve
+                                n_connect = []
+                                d10 = df1 + d01 + d02 + 5
+                                d12 = df1 + dfc + d02 + 5
+                                d1 = min(d10,d12)
+                                d20 = df2 + d02 + d01 + 5
+                                d21 = df2 + dfc + d01 + 5
+                                d2 = min(d20,d21)
+                                d0102 = df0 + d01 + d01 + d02 + 6
+                                d0120 = df0 + d01 + dfc + d02 + 6
+                                d0201 = df0 + d02 + d02 + d01 + 6
+                                d0210 = df0 + d02 + dfc + d01 + 6
+                                d0 = min(d0102,d0120,d0201,d0210)
+                                n_turn = min(d1,d2,d0)
+                                if n_turn != d1 and n_turn != d2:
+                                    # alguno del 0
+                                    n_next = cnd[0][0]
+                                elif n_turn != d1 and n_turn != d0:
+                                    # apor el 2
+                                    n_next = cnd[2][0]
+                                elif n_turn != d2 and n_turn != d0:
+                                    # apor el 1
+                                    n_next = cnd[1][0]
+                                elif n_turn != d0:
+                                    # empate 1 y 2 a por el de menor energia
+                                    if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[1][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                                elif n_turn != d1:
+                                    # empate 0 y 2 a por el de menor energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                                elif n_turn != d2:
+                                    # empate 0 y 1 a por el de menor energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    else:
+                                        n_next = cnd[1][0]
+                                else:
+                                    # triple empate a por el de menor energia
+                                    if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]] and lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[0][0]
+                                    elif lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                        n_next = cnd[1][0]
+                                    else:
+                                        n_next = cnd[2][0]
+                    else:
+                        # Faltan todas las conexiones
+                        df0 = self.light_dict[cnd[0][0]].get_dist((cx,cy))
+                        df1 = self.light_dict[cnd[1][0]].get_dist((cx,cy))
+                        df2 = self.light_dict[cnd[2][0]].get_dist((cx,cy))
+                        d01 = self.light_dict[cnd[0][0]].get_dist(cnd[1][0])
+                        d12 = self.light_dict[cnd[1][0]].get_dist(cnd[2][0])
+                        d20 = self.light_dict[cnd[2][0]].get_dist(cnd[0][0])
+                        dt012 = df0 + d01 + d12 + 6
+                        dt021 = df0 + d20 + d12 + 6
+                        d0 = min(dt012,dt021)
+                        dt102 = df1 + d01 + d20 + 6
+                        dt120 = df1 + d12 + d20 + 6
+                        d1 = min(dt102, dt120)
+                        dt201 = df2 + d20 + d01 + 6
+                        dt210 = df2 + d12 + d01 + 6
+                        d2 = min(dt201,dt210)
+                        n_turn = min(d0,d1,d2)
+                        if cnd[0][1] == 1 and cnd[1][1] == 1 and cnd[2][1] == 1:
+                            # todas las llaves
+                            if n_turn != d0 and n_turn != d1:
+                                n_next = cnd[2][0]
+                                if d12 <= d20:
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_connect = cnd[1][0]
+                            elif n_turn != d0 and n_turn != d2:
+                                n_next = cnd[1][0]
+                                if d01 <= d12:
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_connect = cnd[0][0]
+                            elif n_turn != d1 and n_turn != d2:
+                                n_next = cnd[0][0]
+                                if d01 <= d20:
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_connect = cnd[1][0]
+                            elif n_turn != d0:
+                                # empate 1 y 2 a por el menor energia
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    if d01 <= d12:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[0][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    if d12 <= d20:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                            elif n_turn != d1:
+                                # empate 0 y 2 a por el de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    if d01 <= d20:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    if d12 <= d20:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                            elif n_turn != d2:
+                                # empate 0 y 1 a por el de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    if d01 <= d20:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[1][0]
+                                    if d01 <= d12:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[0][0]
+                            else:
+                                # tripe emapte a por el de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"] and lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    if d01 <= d20:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                                elif lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    if d01 <= d12:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[0][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    if d12 <= d20:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                        elif cnd[0][1] == 1 and cnd[1][1] == 1:
+                            # llaves 0 y 1
+                            if n_turn != d0 and n_turn != d1:
+                                n_next = cnd[2][0]
+                                if d12 < d20:
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_connect = cnd[1][0]
+                            elif n_turn != d0 and n_turn != d2:
+                                n_next = cnd[1][0]
+                                n_connect = cnd[0][0]
+                            elif n_turn != d1 and n_turn != d2:
+                                n_next = cnd[0][0]
+                                n_connect = cnd[1][0]
+                            elif n_turn != d0:
+                                # empate 1 y 2
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    if d12 < d20:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                            elif n_turn != d1:
+                                # empate 0 y 2
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    if d12 < d20:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                            elif n_turn != d2:
+                                # empate 0 y 1
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[1][0]
+                                    n_connect = cnd[0][0]
+                            else:
+                                # triple emapte a por el de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"] and lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_connect = cnd[1][0]
+                                elif lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    if d12 < d20:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                        elif cnd[0][1] == 1 and cnd[2][1] == 1:
+                            # llaves 0 y 2
+                            if n_turn != d2 and n_turn != d1:
+                                n_next = cnd[0][0]
+                                n_connect = cnd[2][0]
+                            elif n_turn != d2 and n_turn != d0:
+                                n_next = cnd[1][0]
+                                if d12 < d01:
+                                    n_connect = cnd[0][0]
+                                else:
+                                    n_connect = cnd[2][0]
+                            elif n_turn != d0 and n_turn != d1:
+                                n_next = cnd[2][0]
+                                n_connect = cnd[0][0]
+                            elif n_turn != d0:
+                                # empate 1 y 2
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    if d12 < d01:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_connect = cnd[0][0]
+                            elif n_turn != d1:
+                                # empate 0 y 2
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_connect = cnd[0][0]
+                            elif n_turn != d2:
+                                # empate 1 y 0
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[0][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    if d12 < d01:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[0][0]
+                                    n_connect = cnd[2][0]
+                            else:
+                                # triple empate
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[0][0]]["energy"] and lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    if d12 < d01:
+                                        n_connect = cnd[0][0]
+                                    else:
+                                        n_connect = cnd[2][0]
+                                elif lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_connect = cnd[0][0]
+                        elif cnd[1][1] == 1 and cnd[2][1] == 1:
+                            # llaves 1 y 2
+                            if n_turn != d1 and n_turn != d2:
+                                n_next = cnd[0][0]
+                                if d01 < d20:
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_connect = cnd[1][0]
+                            elif n_turn != d0 and n_turn != d2:
+                                n_next = cnd[1][0]
+                                n_connect = cnd[2][0]
+                            elif n_turn != d0 and n_turn != d1:
+                                n_next = cnd[2][0]
+                                n_connect = cnd[1][0]
+                            elif n_turn != d0:
+                                # emapte 1 y 2
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_connect = cnd[1][0]
+                            elif n_turn != d1:
+                                # empate 0 y 2
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    if d01 < d20:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_connect =cnd[1][0]
+                            elif n_turn != d2:
+                                # empate 0 y 1
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    if d01 < d20:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                                else:
+                                    n_next = cnd[1][0]
+                                    n_connect = cnd[2][0]
+                            else:
+                                # triple empate
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"] and lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                    if d01 < d20:
+                                        n_connect = cnd[2][0]
+                                    else:
+                                        n_connect = cnd[1][0]
+                                elif lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                    n_connect = cnd[2][0]
+                                else:
+                                    n_next = cnd[2][0]
+                                    n_connect = cnd[1][0]
+                        elif cnd[0][1] == 1:
+                            # solo llave 0
+                            n_connect = cnd[0][0]
+                            if d1 < d2:
+                                n_turn = d1
+                                n_next = cnd[1][0]
+                            elif d2 < d1:
+                                n_turn = d2
+                                n_next = cnd[2][0]
+                            else:
+                                # empate
+                                n_turn = d1
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                else:
+                                    n_next = cnd[2][0]
+                        elif cnd[1][1] == 1:
+                            # solo llave 1
+                            n_connect = cnd[1][0]
+                            if d0 < d2:
+                                n_turn = d0
+                                n_next = cnd[0][0]
+                            elif d2 < d0:
+                                n_turn = d2
+                                n_next = cnd[2][0]
+                            else:
+                                # empate
+                                n_turn = d0
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                else:
+                                    n_next = cnd[2][0]
+                        elif cnd[2][1] == 1:
+                            # solo llave 2
+                            n_connect = cnd[2][0]
+                            if d0 < d1:
+                                n_turn = d0
+                                n_next = cnd[0][0]
+                            elif d1 < d0:
+                                n_turn = d1
+                                n_next = cnd[1][0]
+                            else:
+                                # empate
+                                n_turn = d0
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                else:
+                                    n_next = cnd[1][0]
+                        else:
+                            # ninguna llave
+                            dt01 = df0 + (2*d01) + d20 + 7
+                            dt02 = df0 + (2*d20) + d01 + 7
+                            dt0p = df0 + tr.get_perimeter() + 6
+                            d0 = min(dt01,dt02,dt0p)
+                            dt10 = df1 + (2*d01) + d12 + 7
+                            dt12 = df1 + (2*d12) + d01 + 7
+                            dt1p = df1 + tr.get_perimeter() + 6
+                            d1 = min(dt10,dt12,dt1p)
+                            dt20 = df2 + (2*d20) + d12 + 7
+                            dt21 = df2 + (2*d12) + d20 + 7
+                            dt2p = df2 + tr.get_perimeter() + 6
+                            d2 = min(dt20,dt21,dt2p)
+                            n_turn = min(d0,d1,d2)
+                            n_connect = []
+                            if n_turn != d1 and n_turn != d2:
+                                n_next = cnd[0][0]
+                            elif n_turn != d0 and n_turn != d2:
+                                n_next = cnd[1][0]
+                            elif n_turn != d1 and n_turn != d0:
+                                n_next = cnd[2][0]
+                            elif n_turn != d0:
+                                # empate 1 y 2 a por el de menor energia
+                                if lhs[cnd[1][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[1][0]
+                                else:
+                                    n_next = cnd[2][0]
+                            elif n_turn != d1:
+                                # empate 0 y 2 a por el de menor energia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[2][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                else:
+                                    n_next = cnd[2][0]
+                            elif n_turn != d2:
+                                # empate 0 y 1 a por el de menor enrgia
+                                if lhs[cnd[0][0]]["energy"] <= lhs[cnd[1][0]]["energy"]:
+                                    n_next = cnd[0][0]
+                                else:
+                                    n_next = cnd[1][0]
+                else:
+                    # ya está el triangulo entero
+                    n_turn = self.maxdist
+            # llega con n_turn n_next n_connect
+            if n_turn != self.maxdist:
+                if not(self.check_tri_cross(lhs,tr)):
+                    #no hay cruces
+                    if to == -1:
+                        t_tri = tr
+                        t_turn = n_turn
+                        to = 0
+                        # calcular energia
+                        nxt_dist = self.light_dict[n_next].get_dist((cx,cy))
+                        light_ener = lhs[n_next]["energy"]
+                        if nxt_dist*self.E_LOSS >= light_ener:
+                            ener = tr.get_energy()
+                        else:
+                            if lhs[n_next]["owner"] == self.player_num:
+                                # ya es nuetro
+                                ener = tr.get_energy() - light_ener + (nxt_dist*self.E_LOSS)
+                            else:
+                                ener = tr.get_energy() + light_ener - (nxt_dist*self.E_LOSS)
+                        t_obj = utils.objetive(n_next,n_connect,ener)
+                    else:
+                        if self.check_tri(t_turn,n_turn,t_tri,tr):
+                            t_tri = tr
+                            t_turn = n_turn
+                            # calcular energia
+                            nxt_dist = self.light_dict[n_next].get_dist((cx,cy))
+                            light_ener = lhs[n_next]["energy"]
+                            if nxt_dist*self.E_LOSS >= light_ener:
+                                ener = tr.get_energy()
+                            else:
+                                if lhs[n_next]["owner"] == self.player_num:
+                                    # ya es nuestro
+                                    ener = tr.get_energy() - light_ener + (nxt_dist*self.E_LOSS)
+                                else:
+                                    ener = tr.get_energy() + light_ener - (nxt_dist*self.E_LOSS)
+                            t_obj = utils.objetive(n_next,n_connect,ener)
+        self.log("Tri: %s",str(t_tri.get_lighthouses()))
+        return t_obj
 
-					#calcular si vamos primero al libre
-					if tl1 < tl2:
-						t1l = tl + tl1 + dtc
-						cnl = cnd[1][0]
-					else:
-						t1l = tl + tl2 + dtc
-						cnl = cnd[0][0]
-
-					#calcluar si vamos primero al 1
-					t1c1 = tc1 + tl1 + tl2
-					#calcular si vamos primero al 2
-					t1c2 = tc2 + tl1 + tl2
-
-					if t1l < t1c1 and t1l < t1c2:
-						#primero al libre
-						nxt = otros[0]
-						t1 = t1l
-						n_cnd = cnl
-					elif t1c1 < t1c2:
-						#primero al 1 control
-						nxt = cnd[0][0]
-						t1 = t1c1
-						n_cnd = cnd[1][0]
-					else:
-						#primero al 2 control
-						nxt = cnd[1][0]
-						t1 = t1c2
-						n_cnd = cnd[0][0]
-				elif cnd[0][1] == 1:
-					#solo la llave del primero
-					td1 = self.light_dist[cnd[1][0]][cy][cx]
-					td2 = self.light_dist[otros[0]][cy][cx]
-					dnc = self.light_dist[otros[0]][cordc2[1]][cordc2[0]]
-					tk1 = self.light_dist[cnd[1][0]][cordc1[1]][cordc1[0]]
-					tk2 = self.light_dist[otros[0]][cordc1[1]][cordc1[0]]
-
-					dt1 = td1 + dnc + tk2
-					dt2 = td2 + dnc + tk1
-					if dt1 < dt2:
-						#primero al otro que controlo
-						t1 = dt1
-						nxt = cnd[1][0]
-						n_cnd = cnd[0][0]
-					else:
-						#primero al libre
-						t1 = dt2
-						nxt = otros[0]
-						n_cnd = cnd[0][0]
-				elif cnd[1][1] == 1:
-					#solo la llave del segundo
-					td1 = self.light_dist[cnd[0][0]][cy][cx]
-					td2 = self.light_dist[otros[0]][cy][cx]
-					dnc = self.light_dist[otros[0]][cordc1[1]][cordc1[0]]
-					tk1 = self.light_dist[cnd[1][0]][cordc2[1]][cordc2[0]]
-					tk2 = self.light_dist[otros[0]][cordc2[1]][cordc2[0]]
-
-					dt1 = td1 + dnc + tk2
-					dt2 = td2 + dnc + tk1
-					if dt1 < dt2:
-						#primero al otro que controlo
-						t1 = dt1
-						nxt = cnd[0][0]
-						n_cnd = cnd[1][0]
-					else:
-						#primero al libre
-						t1 = dt2
-						nxt = otros[0]
-						n_cnd = cnd[1][0]
-				else:
-					#ninguna llave
-					#como si no controlo
-					td1 = self.light_dist[self.tri[tr][0][0]][cy][cx]
-					td2 = self.light_dist[self.tri[tr][0][1]][cy][cx]
-					td3 = self.light_dist[self.tri[tr][0][2]][cy][cx]
-					n_cnd = -1
-					if td1 < td2 and td1 < td3:
-						t1 = td1 + self.tri[tr][3]
-						nxt = self.tri[tr][0][0]
-					elif td2 < td3:
-						t1 = td2 + self.tri[tr][3]
-						nxt = self.tri[tr][0][1]
-					else:
-						t1 = td3 + self.tri[tr][3]
-						nxt = self.tri[tr][0][2]
-				#check
-				if to == -1:
-					#comprobar si hay cruces
-					if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-						continue
-					self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-					to = 0
-				else:
-					if self.check_tri(t1,self.tri[tr][2],tr):
-						#comprobar si hay cruces
-						if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-							continue
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-				
-
-		else:
-			#controlo 3
-			cordc1 = self.get_cord(cnd[0][0])
-			cordc2 = self.get_cord(cnd[1][0])
-			cordc3 = self.get_cord(cnd[2][0])
-			td1 = self.light_dist[cnd[0][0]][cy][cx]
-			td2 = self.light_dist[cnd[1][0]][cy][cx]
-			td3 = self.light_dist[cnd[2][0]][cy][cx]
-			t12 = self.light_dist[cnd[0][0]][cordc2[1]][cordc2[0]]
-			t23 = self.light_dist[cnd[1][0]][cordc3[1]][cordc3[0]]
-			t31 = self.light_dist[cnd[2][0]][cordc1[1]][cordc1[0]]
-			if not([cordc1[0],cordc1[1]] in lhs[(cordc2[0],cordc2[1])]["connections"] and [cordc2[0],cordc2[1]] in lhs[(cordc3[0],cordc3[1])]["connections"] and [cordc3[0],cordc3[1]] in lhs[(cordc1[0],cordc1[1])]["connections"]):
-				#Falta alguna conexión
-				if [cordc1[0],cordc1[1]] in lhs[cordc2]["connections"] and [cordc2[0],cordc2[1]] in lhs[cordc3]["connections"]:
-					#Falta 3-1
-					#comprobar si hay cruces
-					if self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-						continue
-					if cnd[0][1] == 1 and cnd[2][1] == 1:
-						if td1 < td3:
-							t1 = td1
-							nxt = cnd[0][0]
-							n_cnd = cnd[2][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						else:
-							t1 = td3
-							nxt = cnd[2][0]
-							n_cnd = cnd[0][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					elif cnd[0][1] == 1:
-						t1 = td3
-						nxt = cnd[2][0]
-						n_cnd = cnd[0][0]
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					elif cnd[2][1] == 1:
-						t1 = td1
-						nxt = cnd[0][0]
-						n_cnd = cnd[2][0]
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					else:
-						#no tenemos ninguna de las llaves
-						if td1 < td3:
-							t1 = td1 + t31
-							nxt = cnd[0][0]
-							n_cnd = -1
-						else:
-							t1 = td3 + t31
-							nxt = cnd[2][0]
-							n_cnd = -1
-						
-
-				elif [cordc2[0],cordc2[1]] in lhs[cordc3]["connections"] and [cordc3[0],cordc3[1]] in lhs[cordc1]["connections"]:
-					#Falta 1-2
-					if self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][0]):
-						continue
-					if cnd[0][1] == 1 and cnd[1][1] == 1:
-						if td1 < td2:
-							t1 = td1
-							nxt = cnd[0][0]
-							n_cnd = cnd[1][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						else:
-							t1 = td2
-							nxt = cnd[1][0]
-							n_cnd = cnd[0][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					elif cnd[0][1] == 1:
-						t1 = td2
-						nxt = cnd[1][0]
-						n_cnd = cnd[0][0]
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					elif cnd[1][1] == 1:
-						t1 = td1
-						nxt = cnd[0][0]
-						n_cnd = cnd[1][0]
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					else:
-						#no tenemos ninguna de las llaves
-						if td1 < td2:
-							t1 = td1 + t12
-							nxt = cnd[0][0]
-							n_cnd = -1
-						else:
-							t1 = td2 + t12
-							nxt = cnd[1][0]
-							n_cnd = -1
-
-				elif [cordc2[0],cordc2[1]] in lhs[cordc1]["connections"] and [cordc3[0],cordc3[1]] in lhs[cordc1]["connections"]:
-					#Falta 2-3
-					if self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][1]):
-						continue
-					if cnd[1][1] == 1 and cnd[2][1] == 1:
-						if td2 < td3:
-							t1 = td2
-							nxt = cnd[1][0]
-							n_cnd = cnd[2][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						else:
-							t1 = td3
-							nxt = cnd[2][0]
-							n_cnd = cnd[1][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break							
-					elif cnd[1][1] == 1:
-						t1 = td3
-						nxt = cnd[2][0]
-						n_cnd = cnd[1][0]
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					elif cnd[2][1] == 1:
-						t1 = td2
-						nxt = cnd[1][0]
-						n_cnd = cnd[2][0]
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						break
-					else:
-						if td2 < td3:
-							t1 = td2 + t23
-							nxt = cnd[1][0]
-							n_cnd = cnd[2][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-						else:
-							t1 = td3 + t23
-							nxt = cnd[2][0]
-							n_cnd = cnd[1][0]
-							self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-
-				elif [cordc1[0],cordc1[1]] in lhs[cordc2]["connections"]:
-					#Falta 2-3 y 3-1
-					if cnd[0][1] == 1 and cnd[1][1] == 1:
-						nxt = cnd[2][0]
-						t1 = td3
-						#conectar primero el largo
-						if t23 < t31:
-							n_cnd = cnd[0][0]
-						else:
-							n_cnd = cnd[1][0]
-					else:
-						#si no tenemso llaves
-						if cnd[0][1] != 1 and cnd[1][1] != 1 and cnd[2][1] != 1:
-							if td1 < td2:
-								t1 = td1 + t31 + t23
-								nxt = cnd[0][0]
-								n_cnd = -1
-							else:
-								t1 = td2 + t23 + t31
-								nxt = cnd[1][0]
-								n_cnd = -1
-						else:
-							#comprobar en order y comparando
-							t1 = self.maxdist
-							#Si tenemos la llave del 3 (el no conectado)
-							if cnd[2][1] == 1:
-								if t12 < t31:
-									temp1 = td1 + t12 + t23
-								else:
-									temp1 = td1 + t31 + t23
-
-								if t12 < t23:
-									temp2 = td2 + t12 + t31
-								else:
-									temp2 = td2 + t23 + t31
-
-								if temp1 < temp2:
-									t1 = temp1
-									nxt = cnd[0][0]
-									n_cnd = cnd[2][0]
-								else:
-									t1 = temp2
-									nxt = cnd[1][0]
-									n_cnd = cnd[2][0]
-
-							#Si tenemos la llave del 2
-							if cnd[1][1] == 1:
-								temp = td3 + t31
-								if temp < t1:
-									t1 = temp
-									nxt = cnd[2][0]
-									n_cnd = cnd[1][0]
-
-							#Si tenemos 2 y 3
-							if cnd[1][1] == 1 and cnd[2][1]:
-								if td3 < td1:
-									temp = td3 + t31
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[2][0]
-										n_cnd = cnd[1][0]
-								else:
-									temp = td1 + t31
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[0][0]
-										n_cnd = cnd[2][0]
-
-							#Si tenemos el 1
-							if cnd[0][1] == 1:
-								temp = td3 + t23
-								if temp < t1:
-									t1 = temp
-									nxt = cnd[2][0]
-									n_cnd = cnd[0][0]
-
-							#Si tenemos el 1 y el 3:
-							if cnd[0][1] == 1 and cnd[2][1]:
-								if td3 < td2:
-									temp = td3 + t23
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[2][0]
-										n_cnd = cnd[0][0]
-								else:
-									temp = td2 + t23
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[1][0]
-										n_cnd = cnd[2][0]
 
 
-
-				elif [cordc2[0],cordc2[1]] in lhs[cordc3]["connections"]:
-					#Falta 1-2 y 3-1
-					if cnd[1][1] == 1 and cnd[2][1] == 1:
-						t1 = td1
-						nxt = cnd[0][0]
-						if t12 < t31:
-							n_cnd = cnd[2][0]
-						else:
-							n_cnd = cnd[1][0]
-					else:
-						if cnd[0][1] != 1 and cnd[1][1] != 1 and cnd[2][1] != 1:
-							if td2 < td3:
-								t1 = td2 + t12 + t31
-								nxt = cnd[1][0]
-								n_cnd = -1
-							else:
-								t1 = td3 + t31 + t12
-								nxt = cnd[2][0]
-								n_cnd = -1
-						else:
-							#comprobar en order y comparando
-							t1 = self.maxdist
-							#tenemos la llave del 1
-							if cnd[2][1] == 1:
-								if t23 < t12:
-									temp2 = td2 + t23 + t31
-								else:
-									temp2 = td2 + t12 + t31
-
-								if t23 < t31:
-									temp3 = td3 + t23 + t12
-								else:
-									temp3 = td3 + t31 + t12
-
-								if temp2 < temp3:
-									t1 = temp2
-									nxt = cnd[1][0]
-									n_cnd = [0][0]
-								else:
-									t1 = temp3
-									nxt = cnd[2][0]
-									n_cnd= [0][0]
-
-							#tenemos 1 y 3
-							if cnd[0][1] == 1 and cnd[2][1] == 1:
-								if td2 < td1:
-									temp = td2 + t12
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[1][0]
-										n_cnd = cnd[0][0]
-								else:
-									temp = td1 + t12
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[0][0]
-										n_cnd = cnd[2][0]
-
-							#tenemos el 1 y el 2
-							if cnd[0][1] == 1 and cnd[1][1] == 1:
-								if td1 < td3:
-									temp = td1 + t31
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[0][0]
-										n_cnd = cnd[1][0]
-								else:
-									temp = td3 + t31
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[2][0]
-										n_cnd = cnd[0][0]
-
-							#tenemos la llave del 3
-							if cnd[2][1] == 1:
-								temp = td1 + t12
-								if temp < t1:
-									t1 = temp
-									nxt = cnd[0][0]
-									n_cnd = cnd[2][0]
-
-							#tenemos la llave del 2
-							if cnd[1][1] == 1:
-								temp = td1 + t31
-								if temp < t1:
-									t1 = temp
-									nxt = cnd[0][0]
-									n_cnd = cnd[2][0]		
-								
-							
-					
-
-				elif [cordc3[0],cordc3[1]] in lhs[cordc1]["connections"]:
-					#Falta 1-2 y 2-3
-					if cnd[0][1] == 1 and cnd[2][1]:
-						t1 = td2
-						nxt = cnd[1][0]
-						#conectar el más lejano
-						if t12 < t23:
-							n_cnd = cnd[2][0]
-						else:
-							n_cnd = cnd[0][0]
-					else:
-						if cnd[0][1] != 1 and cnd[1][1] != 1 and cnd[2][1] != 1:
-							if td1 < td3:
-								t1 = td1 + t12 + t23
-								nxt = cnd[0][0]
-								n_cnd = -1
-							else:
-								t1 = td3 + t23 + t12
-								nxt = cnd[2][0]
-								n_cnd = -1
-						else:
-							#comprobar en order y comparando
-							t1 = self.maxdist
-							#si tenemos la llave dle 2
-							if cnd[1][1] == 1:
-								if t12 < t31:
-									temp1 = td1 + t12 + t23
-								else:
-									temp1 = td1 + t31 + t23
-
-								if t31 < t23:
-									temp3 = td3 + t31 + t12
-								else:	
-									temp3 = td3 + t23 + t12
-
-								if temp1 < temp3:
-									t1 = temp1
-									nxt = cnd[0][0]
-									n_cnd = cnd[1][0]
-								else:
-									t1 = temp3
-									nxt = cnd[2][0]
-									n_cnd = cnd[1][0]
-
-							#tenemos la llave dle 2 y del 3
-							if cnd[1][1] == 1 and cnd[2][1] == 1:
-								if td1 < td2:
-									temp = td1 + t12
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[0][0]
-										n_cnd = cnd[1][0]
-								else:
-									temp = td2 + t12
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[1][0]
-										n_cnd = cnd[2][0]
-							#tenemos la lalve del 1
-							if cnd[0][1] == 1:
-								temp = td2 + t23
-								if temp < t1:
-									t1 = temp
-									nxt = cnd[1][0]
-									n_cnd = [0][0]
-
-							#tenemos la llave del 1 y del 2
-							if cnd[0][1] == 1 and cnd[1][1] == 1:
-								if td3 < td2:
-									temp = td3 + t23
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[2][0]
-										n_cnd = cnd[1][0]
-								else:
-									temp = td2 + t23
-									if temp < t1:
-										t1 = temp
-										nxt = cnd[1][0]
-										n_cnd = cnd[0][0]
-
-							#tenemos la llave del 3
-							if cnd[2][1] == 1:
-								temp = td2 + t12
-								if temp < t1:
-									t1 = temp
-									nxt = cnd[1][0]
-									n_cnd = cnd[2][0]
-
-				
-				
-				#check
-				if to == -1:
-					#comprobar si hay cruces
-					if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-						continue
-					self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-					to = 0
-				else:
-					if self.check_tri(t1,self.tri[tr][2],tr):
-						#comprobar si hay cruces
-						if self.check_croses(lhs,self.tri[tr][0][0],self.tri[tr][0][1]) or self.check_croses(lhs,self.tri[tr][0][1],self.tri[tr][0][2]) or self.check_croses(lhs,self.tri[tr][0][2],self.tri[tr][0][0]):
-							continue
-						self.o2 = [tr,self.tri[tr][2],t1,0,nxt,n_cnd]
-		
-		
-    	
-    	if self.o2[0] == -1:
-    		#no seleccionado por cruces. al más cercano
-    		self.o2[4] = f_d
-    	self.o1 = self.o2
-    	self.f_mind = f_d		
-
-   
-
-    def check_tri(self,t1,nt):
-        if self.o2[0][2] < nt[2]:
-            #el nuevo más puntos
-            if self.o2[1] > t1:
-                #el nevo menos turnos
+    def check_tri(self,o_turn,n_turn,o_tri,n_tri):
+        n_points = n_tri.get_points()
+        o_points = o_tri.get_points()
+        n_prob = 1.0-self.tri_prob(n_tri)
+        nt_prob = math.pow(n_prob,n_turn)
+        if nt_prob < self.E_PROB:
+            return False
+        if n_points > o_points:
+            # el nuevo más puntos
+            if n_turn <= o_turn:
+                # el nuevo menos o los mismos turnos
                 return True
             else:
-                #el nuevo más turnos
-                dt = t1-self.o2[1]
-                dp = dt*self.o2[0][2]
-                if dp > nt[2]:
+                # el viejo menos turnos
+                dt = n_turn - o_turn
+                dp = dt*o_points
+                if dp >= n_points:
                     return False
-                elif dp == p1:
-                    #por probabilidad
-                    pa = (self.o2[0][1]*1.0)/(self.t_turn*1.0)
-                    pn = (nt[1]*1.0)/(self.t_turn*1.0)
-                    ant = pow((1-pa),self.o2[2])
-                    new = pow((1-pn),t1)
-                    if ant < new:
-                        return True
-                    else:
-                        return False
                 else:
                     return True
-        else:
-            #el nuevo menos puntos
-            if self.o2[1] > t1:
-                #el nuevo menos turnos
-                dt = self.o2[1]-t1
-                dp = dt*nt[2]
-                if dp > self.o2[0][2]:
-                    return True
-                elif dp == self.o2[0][2]:
-                    #por probabilidad
-                    pa = (self.o2[0][1]*1.0)/(self.t_turn*1.0)
-                    pn = (nt[1]*1.0)/(self.t_turn*1.0)
-                    ant = pow((1-pa),self.o2[2])
-                    new = pow((1-pn),t1)
-                    if ant <= new:
-                        return True
-                    else:
-                        return False			
-                else:
-                    return False
-            else:
-                #el nuevo mas turnos
+        elif o_points > n_points:
+            # el viejo más puntos
+            if o_turn <= n_turn:
+                # el viejo menos o los mismo turnos
                 return False
+            else:
+                # el nuevo menos turnos
+                dt = o_turn - n_turn
+                dp = dt*n_points
+                if dp >= o_points:
+                    return True
+                else:
+                    return False
+        else:
+            # los mismos puntos
+            if o_turn > n_turn:
+                # el nuevo menos turnos
+                return True
+            elif n_turn > o_turn:
+                # el viejo menos turnos
+                return False
+            else:
+                # los dos los mismo turnos
+                if n_tri.get_energy() > o_tri.get_energy():
+                    # el viejo menos energia
+                    return False
+                elif o_tri.get_energy() > n_tri.get_energy():
+                    # el nuevo menos energia
+                    return True
+                else:
+                    # los dos la misma (probabilidad)
+                    o_prob = self.tri_prob(o_tri)
+                    n_prob = self.tri_prob(n_tri)
+                    if o_prob <= n_prob:
+                        # viejo menor o igual probabilidad de estar ocupado
+                        return False
+                    else:
+                        # el nuevo menor probabilidad de estar ocupado
+                        return True
+
+
+
+    def tri_prob(self,tri):
+        lh = tri.get_lighthouses()
+        ocupied = max(self.light_dict[lh[0]].get_ocupied(),self.light_dict[lh[1]].get_ocupied(),self.light_dict[lh[2]].get_ocupied())
+        return (ocupied*1.0)/(self.turn*1.0)
+
+    def check_tri_cross(self,light,tri):
+        """comprobar que no haya cruces con el triangulo"""
+        t_lh = tri.get_lighthouses()
+        if  (self.check_croses(light,t_lh[0],t_lh[1]) or self.check_croses(light,t_lh[1],t_lh[2]) or self.check_croses(light,t_lh[2],t_lh[0])):
+            return True
+        else:
+            return False
+        
+    def check_croses(self,light,f1,f2):
+        """comprobar si conectar 2 faros haria cruces"""
+        for pos,l in light.iteritems():
+            for c in l["connections"]:
+                # if self.crosing([f1,f2],[pos,(c[0],c[1])]):
+                if geom.intersect((c,pos), (f1,f2)):
+                    return True
+        return False
+
+    def crosing(self,l1,l2):
+        """comprobar el cruce entre 2 línea"""
+        if(l1[0] == l2[0] or l1[0] == l2[1] or l1[1] == l2[0] or l1[1] == l2[1]):
+            # no es cruce es solape (punto en común)
+            return False
+        if max(l1[0][0],l1[1][0]) < min(l2[0][0],l2[1][0]):
+            # distinta proyeción x
+            return False
+
+        A1 = self.gradient(l1)
+        A2 = self.gradient(l2)
+        if (A1 == A2):
+            # son paralelas
+            return False
+        if l1[0][0] == l1[1][0]:
+            # linea 1 vertical
+            Xa = l1[0][0]
+            b2 = l2[0][1] - l2[0][0]*A2
+            y2 = Xa*A2+b2
+            if(y2 > max(l1[0][1],l1[1][1]) or y2 < min(l1[0][1],l1[1][1])):
+                return False
+            else:
+                return True
+
+        elif l2[0][0] == l2[1][0]:
+            # linea 2 vertical
+            Xa = l2[0][0]
+            b1 = l1[0][1] - l1[0][0]*A1
+            y1 = Xa*A1+b1
+            if(y1 > max(l2[0][1],l2[1][1]) or y1 < min(l2[0][1],l2[1][1])):
+                return False
+            else:
+                return True
+
+        else:
+            b1 = l1[0][1] - l1[0][0]*A1
+            b2 = l2[0][1] - l2[0][0]*A2
+            Xa = (b2 - b1)/(A1-A2)
+            if ((Xa < max(min(l1[0][0],l1[1][0]),min(l2[0][0],l2[1][0]))) or \
+                    (Xa > min(max(l1[0][0],l1[1][0]),max(l2[0][0],l2[1][0])))):
+                return False
+            else:
+                return True
+
+    def gradient(self,l):
+        """ Devuelve el gradiente m de una linea"""
+        m = None
+        # asegurar que la línea no es vertical
+        if l[0][0] != l[1][0]:
+            m = (1./(l[0][0]-l[1][0]))*(l[0][1] - l[1][1])
+        return m
+
+
+
 
 if __name__ == "__main__":
-    iface = interface.Interface(Wuibo)
+    iface = interface.Interface(RandBot)
     iface.run()
